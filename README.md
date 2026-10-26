@@ -99,7 +99,11 @@ ARC Assurance is invoked through the shipped `POST /v1/assurance/runs` and `GET 
 npm test         # unit tests for Meridian backend and connector boundary
 npm start        # local integrated three-server environment
 npm run smoke    # live 17-scenario suite; requires running environment
+npm run validate # same 17 scenarios, writes reports/latest.json
+npm run phase2   # phase 2 security, stress, and evidence report; requires npm start
 ```
+
+Phase 2 is a separate catalogue. It does not replace the 17 integration scenarios. `reports/phase2-latest.json` records passes, failures, unsupported product gaps, and not-implemented checks. A green sandbox run is not an enterprise certification.
 
 ## What the starter does NOT include yet
 

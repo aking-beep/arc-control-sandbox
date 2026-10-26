@@ -1,5 +1,34 @@
 import { randomUUID } from 'node:crypto';
 
+export const STRESS_PRESETS = {
+  '100': { count: 100, concurrency: 5 },
+  '500': { count: 500, concurrency: 10 },
+  '1000': { count: 1000, concurrency: 20 }
+};
+
+/** Deterministic workload mix. A null seed keeps the original index pattern. */
+export function classifyAmount(index, seed = null) {
+  const band = seed == null
+    ? index % 4
+    : (Math.imul(index + 1, 1664525) + Math.imul(Number(seed) || 0, 1013904223)) >>> 0;
+  const slot = seed == null ? band : band % 4;
+  if (slot < 2) return { amount: 120, outcome: 'executed', effect: 1 };
+  if (slot === 2) return { amount: 1800, outcome: 'pending_approval', effect: 0 };
+  return { amount: 4200, outcome: 'denied', effect: 0 };
+}
+
+export function stressPlan(count, seed = null) {
+  const plan = { count, seed, executed: 0, pending: 0, denied: 0, expectedEffects: 0 };
+  for (let index = 0; index < count; index += 1) {
+    const row = classifyAmount(index, seed);
+    if (row.outcome === 'executed') plan.executed += 1;
+    else if (row.outcome === 'pending_approval') plan.pending += 1;
+    else plan.denied += 1;
+    plan.expectedEffects += row.effect;
+  }
+  return plan;
+}
+
 // Independent observations: assertions examine ARC's HTTP response AND the
 // Meridian backend mutation log, never just a displayed status or fixture.
 export function createScenarios({ company, seeded, apiBase, operatorToken }) {
@@ -209,40 +238,78 @@ export function createScenarios({ company, seeded, apiBase, operatorToken }) {
   };
   // Real HTTP load against ARC; compares observed backend effects with
   // successfully authorized outcomes. Bounded by design for laptop safety.
-  const load = async ({ count: requestedCount = 100, concurrency: requestedConcurrency = 10 } = {}) => {
+  const mutationSnapshot = () => {
+    const byTool = {};
+    for (const entry of company.state().mutationLog) byTool[entry.tool] = (byTool[entry.tool] || 0) + 1;
+    return byTool;
+  };
+  const load = async ({ count: requestedCount = 100, concurrency: requestedConcurrency = 10, seed = null } = {}) => {
     const countTotal = Math.min(1000, Math.max(1, Number(requestedCount) || 100));
     const concurrency = Math.min(25, Math.max(1, Number(requestedConcurrency) || 10));
-    const before = count('finance.refund');
+    const plan = stressPlan(countTotal, seed);
+    const before = mutationSnapshot();
+    const beforeFaults = company.state().faultEffects.length;
     const results = new Array(countTotal);
     const started = performance.now();
     let index = 0;
     async function worker() {
       while (index < countTotal) {
         const i = index++;
-        const band = i % 4;
-        const amount = band < 2 ? 120 : band === 2 ? 1800 : 4200;
+        const row = classifyAmount(i, seed);
         try {
-          const r = await act('finance-agent', 'finance.refund', { customer: 'cus-101', amount });
-          results[i] = { expected: amount===120?'executed':amount===1800?'pending_approval':'denied',
-            actual: r.body?.outcome ?? `HTTP_${r.httpStatus}`, timeMs: r.latencyMs, evidence: !!r.body?.evidenceId,
-            expectedEffect: amount===120 ? 1 : 0 };
-        } catch (e) { results[i]={expected:amount===120?'executed':amount===1800?'pending_approval':'denied',actual:`transport_error:${e.message}`,timeMs:0,evidence:false,expectedEffect:amount===120?1:0}; }
+          const r = await act('finance-agent', 'finance.refund', { customer: 'cus-101', amount: row.amount });
+          results[i] = { expected: row.outcome, actual: r.body?.outcome ?? `HTTP_${r.httpStatus}`, timeMs: r.latencyMs, evidence: !!r.body?.evidenceId, expectedEffect: row.effect };
+        } catch (e) {
+          results[i] = { expected: row.outcome, actual: `transport_error:${e.message}`, timeMs: 0, evidence: false, expectedEffect: row.effect };
+        }
       }
     }
-    await Promise.all(Array.from({length:Math.min(concurrency,countTotal)},()=>worker()));
-    const observedEffects = count('finance.refund') - before;
-    const authorizedResults = results.filter(r=>r.actual==='executed').length;
-    const mismatches = results.filter(r=>r.actual!==r.expected || !r.evidence);
-    const expectedEffects = results.reduce((s,r)=>s+r.expectedEffect,0);
-    const durations=results.map(r=>r.timeMs).sort((a,b)=>a-b);
-    const percentile=p=>durations[Math.min(durations.length-1,Math.floor(p*(durations.length-1)))];
-    const elapsedMs=Math.round(performance.now()-started);
-    return {pass:mismatches.length===0&&observedEffects===expectedEffects&&authorizedResults===expectedEffects,
-      requested:countTotal,concurrency,elapsedMs,requestsPerSecond:Number((countTotal/(elapsedMs/1000||1)).toFixed(2)),
-      p50Ms:percentile(.5),p95Ms:percentile(.95),p99Ms:percentile(.99),
-      expectedEffects,observedEffects,unexpectedOutcomes:mismatches.length,
-      outcomeDistribution:Object.fromEntries(['executed','pending_approval','denied'].map(k=>[k,results.filter(r=>r.actual===k).length])),
-      samples:mismatches.slice(0,10)};
+    await Promise.all(Array.from({ length: Math.min(concurrency, countTotal) }, () => worker()));
+    const after = mutationSnapshot();
+    const observedEffects = (after['finance.refund'] || 0) - (before['finance.refund'] || 0);
+    const otherMutations = Object.keys({ ...before, ...after })
+      .filter(tool => tool !== 'finance.refund')
+      .reduce((sum, tool) => sum + ((after[tool] || 0) - (before[tool] || 0)), 0);
+    const faultDelta = company.state().faultEffects.length - beforeFaults;
+    const authorizedResults = results.filter(r => r.actual === 'executed').length;
+    const mismatches = results.filter(r => r.actual !== r.expected || !r.evidence);
+    const transportErrors = results.filter(r => String(r.actual).startsWith('transport_error')).length;
+    const expectedEffects = results.reduce((sum, row) => sum + row.expectedEffect, 0);
+    const durations = results.map(r => r.timeMs).sort((a, b) => a - b);
+    const percentile = p => durations[Math.min(durations.length - 1, Math.floor(p * (durations.length - 1)))];
+    const elapsedMs = Math.round(performance.now() - started);
+    const unexpectedMutations = observedEffects !== expectedEffects || otherMutations !== 0 || faultDelta !== 0;
+    return {
+      pass: mismatches.length === 0 && observedEffects === expectedEffects && authorizedResults === expectedEffects && !unexpectedMutations,
+      requested: countTotal, concurrency, seed, elapsedMs,
+      requestsPerSecond: Number((countTotal / (elapsedMs / 1000 || 1)).toFixed(2)),
+      p50Ms: percentile(.5), p95Ms: percentile(.95), p99Ms: percentile(.99),
+      minMs: durations[0], maxMs: durations.at(-1),
+      expectedEffects, observedEffects, otherMutations, faultDelta,
+      unexpectedMutations, unexpectedOutcomes: mismatches.length, transportErrors,
+      plan: { executed: plan.executed, pending: plan.pending, denied: plan.denied },
+      outcomeDistribution: Object.fromEntries(['executed', 'pending_approval', 'denied'].map(k => [k, results.filter(r => r.actual === k).length])),
+      samples: mismatches.slice(0, 10).map(sample => ({ expected: sample.expected, actual: sample.actual, evidence: sample.evidence }))
+    };
+  };
+  const stress = async ({ preset, count, concurrency, seeds = [1, 2, 3], seed } = {}) => {
+    const chosen = STRESS_PRESETS[String(preset)] || {};
+    const runSeeds = seed == null ? seeds : [seed];
+    const runs = [];
+    for (const runSeed of runSeeds) {
+      runs.push(await load({
+        count: chosen.count ?? count,
+        concurrency: chosen.concurrency ?? concurrency,
+        seed: runSeed
+      }));
+    }
+    return {
+      preset: preset ?? null,
+      count: chosen.count ?? count,
+      concurrency: chosen.concurrency ?? concurrency,
+      pass: runs.every(run => run.pass),
+      runs
+    };
   };
   const assurance = async () => {
     const r=await op('/v1/assurance/runs',{});
@@ -250,7 +317,7 @@ export function createScenarios({ company, seeded, apiBase, operatorToken }) {
     const summary=await op('/v1/assurance/summary');
     return {pass:summary.httpStatus===200,run:r.body,summary:summary.body,disclaimer:'Not_assessable and attested are not passes. Operator identity is header-asserted in ARC 2.0.'};
   };
-  return {list:()=>specs,run:guarded,load,assurance,all:async()=>{
+  return {list:()=>specs,run:guarded,load,stress,assurance,all:async()=>{
     const results=[];
     for (const spec of specs) results.push(await guarded(spec.id));
     return results;

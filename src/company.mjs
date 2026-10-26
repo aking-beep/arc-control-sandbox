@@ -11,12 +11,15 @@ const initial = () => ({
   employees: [{ id: 'emp-201', name: 'Alex Chen', department: 'Operations', salary: 86000 }],
   orders: [{ id: 'ord-501', customerId: 'cus-101', total: 4200, status: 'paid' }],
   refunds: [], deployments: [], exports: [], quarantines: [],
-  mutationLog: []
+  mutationLog: [],
+  faultLog: [],
+  faultEffects: []
 });
 
 export function createCompany({ executionToken, getHarness, port = 8890, host = '127.0.0.1' }) {
   let state = initial();
   const runs = [];
+  const phase2Runs = [];
   const equal = (a, b) => {
     const x = Buffer.from(String(a ?? ''));
     const y = Buffer.from(String(b ?? ''));
@@ -71,6 +74,34 @@ export function createCompany({ executionToken, getHarness, port = 8890, host = 
     state.mutationLog.push({ tool: name, parameters: data, at: new Date().toISOString() });
     return result;
   };
+  const fault = async (res, path, data) => {
+    const at = new Date().toISOString();
+    state.faultLog.push({ path, at });
+    if (path === '/internal/fault/http-500') return json(res, 500, { error: 'synthetic_upstream_failure' });
+    if (path === '/internal/fault/redirect') {
+      res.writeHead(302, { location: 'http://example.com/not-allowlisted', 'cache-control': 'no-store' });
+      res.end();
+      return;
+    }
+    if (path === '/internal/fault/slow' || path === '/internal/fault/slow-then-effect') {
+      const delayMs = Math.min(8000, Math.max(0, Number(data.delayMs) || 0));
+      await new Promise(resolveDelay => setTimeout(resolveDelay, delayMs));
+      if (path === '/internal/fault/slow-then-effect') {
+        const effect = { id: `fault-${state.faultEffects.length + 1}`, kind: 'slow', at };
+        state.faultEffects.push(effect);
+        state.mutationLog.push({ tool: 'fault.slow_effect', parameters: { delayMs }, at });
+      }
+      return json(res, 200, { delayedMs: delayMs });
+    }
+    if (path === '/internal/fault/effect-then-hang') {
+      const effect = { id: `fault-${state.faultEffects.length + 1}`, kind: 'timeout', at };
+      state.faultEffects.push(effect);
+      state.mutationLog.push({ tool: 'fault.timeout_effect', parameters: data, at });
+      await new Promise(resolveDelay => setTimeout(resolveDelay, 8000));
+      return json(res, 200, { late: true });
+    }
+    return json(res, 404, { error: 'unknown_fault' });
+  };
   const server = createServer(async (req, res) => {
     try {
       const url = new URL(req.url || '/', `http://${host}:${port}`);
@@ -78,6 +109,7 @@ export function createCompany({ executionToken, getHarness, port = 8890, host = 
       if (path.startsWith('/internal/')) {
         if (req.method !== 'POST') return json(res, 405, { error: 'method_not_allowed' });
         if (!equal(req.headers['x-meridian-connector-token'], executionToken)) return json(res, 403, { error: 'connector_token_required' });
+        if (path.startsWith('/internal/fault/')) return fault(res, path, await parse(req));
         try { return json(res, 200, apply(path.slice('/internal/'.length).replaceAll('/', '.'), await parse(req))); }
         catch (e) { return json(res, 400, { error: String(e.message) }); }
       }
@@ -87,15 +119,33 @@ export function createCompany({ executionToken, getHarness, port = 8890, host = 
         const harness = getHarness();
         return json(res, 200, { scenarios: harness?.scenarios.list() || [], runs: runs.slice(-30) });
       }
-      if (req.method === 'POST' && (path === '/api/load' || path === '/api/assurance')) {
+      if (req.method === 'GET' && path === '/api/phase2') {
+        const harness = getHarness();
+        return json(res, 200, { scenarios: harness?.phase2?.list() || [], runs: phase2Runs.slice(-80) });
+      }
+      if (req.method === 'POST' && (path === '/api/load' || path === '/api/assurance' || path === '/api/stress')) {
         const harness=getHarness();
         if (!harness) return json(res,503,{error:'ARC Control not initialized'});
         const args=await parse(req);
-        const result=path==='/api/load' ? await harness.scenarios.load(args) : await harness.scenarios.assurance();
+        const result = path === '/api/assurance'
+          ? await harness.scenarios.assurance()
+          : path === '/api/stress'
+            ? await harness.scenarios.stress(args)
+            : await harness.scenarios.load(args);
         return json(res,200,result);
       }
       if (req.method === 'POST' && path === '/api/reset') {
-        state = initial(); runs.length = 0; return json(res, 200, { reset: true, note: 'Business fixtures reset; ARC audit history intentionally preserved.' });
+        state = initial(); runs.length = 0; phase2Runs.length = 0; return json(res, 200, { reset: true, note: 'Business fixtures reset; ARC audit history intentionally preserved.' });
+      }
+      if (req.method === 'POST' && path.startsWith('/api/phase2/')) {
+        const harness = getHarness();
+        if (!harness?.phase2) return json(res, 503, { error: 'Phase 2 runner not initialized' });
+        const id = decodeURIComponent(path.slice('/api/phase2/'.length));
+        const result = id === 'all' ? await harness.phase2.all() : await harness.phase2.run(id);
+        if (Array.isArray(result)) phase2Runs.push(...result);
+        else if (result?.scenarios) phase2Runs.push(...result.scenarios);
+        else phase2Runs.push(result);
+        return json(res, 200, result);
       }
       if (req.method === 'POST' && path.startsWith('/api/scenarios/')) {
         const harness = getHarness();
@@ -118,6 +168,8 @@ export function createCompany({ executionToken, getHarness, port = 8890, host = 
     server, state: () => structuredClone(state), runs,
     resetBusiness: () => { state = initial(); },
     apply,
+    faultLog: () => state.faultLog.length,
+    faultEffects: () => state.faultEffects.length,
     listen: () => new Promise((resolve, reject) => {
       server.once('error', reject);
       server.listen(port, host, () => resolve({ host, port: server.address().port }));
