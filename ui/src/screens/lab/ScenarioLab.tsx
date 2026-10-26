@@ -83,7 +83,7 @@ export function ScenarioLab() {
       <div className="grid gap-5 lg:grid-cols-[176px_minmax(0,1fr)]">
         <aside className="space-y-5 text-[13px]">
           <FilterGroup label="Suite" value={suite} onChange={setSuite} options={[
-            { id: 'all', label: 'All scenarios', n: ALL_CATALOG.length },
+            { id: 'all', label: 'All scenarios', n: ALL_CATALOG.length + phase2.specs.length },
             ...(['original', 'phase2', 'adversarial', 'regression'] as Suite[]).map(s => ({
               id: s, label: SUITE_LABEL[s],
               n: s === 'phase2' ? phase2.specs.length : count(x => x.suite === s),
@@ -116,7 +116,7 @@ export function ScenarioLab() {
                   <button key={l} onClick={() => setGrouped(v)} className={`rounded px-2 py-1 whitespace-nowrap transition-colors duration-150 ${grouped === v ? 'bg-navy text-white' : 'text-muted hover:text-ink'}`}>{l}</button>
                 ))}
               </div>
-              <span className="text-[12px] text-muted"><span className="tnum">{rows.length}</span> shown</span>
+              <span className="text-[12px] text-muted"><span className="tnum">{rows.length + (showPhase2 ? p2Rows.length : 0)}</span> shown</span>
             </div>
           </div>
 
