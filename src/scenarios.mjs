@@ -46,10 +46,15 @@ export function createScenarios({ company, seeded, apiBase, operatorToken }) {
     try { payload = JSON.parse(raw); } catch { payload = { text: raw }; }
     return { httpStatus: res.status, body: payload, latencyMs: Math.round(performance.now() - before) };
   };
-  const act = (agent, tool, parameters = {}, extras = {}) => request(`${apiBase}/v1/actions`, {
-    method: 'POST', headers: { authorization: `Bearer ${seeded[agent]?.apiKey ?? agent}`, 'content-type': 'application/json' },
-    body: { tool, parameters, correlationId: `meridian-${randomUUID()}`, ...extras }
-  });
+  // The correlation id sent to ARC is kept on the response so results can be
+  // traced back to the ARC audit trail.
+  const act = (agent, tool, parameters = {}, extras = {}) => {
+    const correlationId = `meridian-${randomUUID()}`;
+    return request(`${apiBase}/v1/actions`, {
+      method: 'POST', headers: { authorization: `Bearer ${seeded[agent]?.apiKey ?? agent}`, 'content-type': 'application/json' },
+      body: { tool, parameters, correlationId, ...extras }
+    }).then(r => ({ ...r, correlationId }));
+  };
   const op = (path, body) => request(`${apiBase}${path}`, {
     method: body === undefined ? 'GET' : 'POST', headers: opHeaders, body
   });
@@ -65,6 +70,7 @@ export function createScenarios({ company, seeded, apiBase, operatorToken }) {
       decision: r.body?.decision?.effect || null, policyId: r.body?.decision?.policyId || null,
       evidenceId: r.body?.evidenceId || null, evidencePresent,
       approvalId: r.body?.approvalId || null, latencyMs: r.latencyMs,
+      correlationId: r.correlationId || r.body?.correlationId || null,
       error: r.body?.error?.code || null
     };
   };
@@ -317,7 +323,9 @@ export function createScenarios({ company, seeded, apiBase, operatorToken }) {
     const summary=await op('/v1/assurance/summary');
     return {pass:summary.httpStatus===200,run:r.body,summary:summary.body,disclaimer:'Not_assessable and attested are not passes. Operator identity is header-asserted in ARC 2.0.'};
   };
-  return {list:()=>specs,run:guarded,load,stress,assurance,all:async()=>{
+  // Read-only evidence lookup for the UI; the operator token never leaves this module.
+  const evidence = async id => op(`/v1/evidence/${encodeURIComponent(id)}`);
+  return {list:()=>specs,run:guarded,load,stress,assurance,evidence,all:async()=>{
     const results=[];
     for (const spec of specs) results.push(await guarded(spec.id));
     return results;

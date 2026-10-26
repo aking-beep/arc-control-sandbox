@@ -3,6 +3,7 @@ import { execFile } from 'node:child_process';
 import { mkdir, writeFile } from 'node:fs/promises';
 import { promisify } from 'node:util';
 import { join } from 'node:path';
+import { redact } from './redact.mjs';
 
 const execFileAsync = promisify(execFile);
 const base = process.env.MERIDIAN_BASE || 'http://127.0.0.1:8890';
@@ -26,13 +27,6 @@ const post = async (path, body) => {
   const payload = await response.json().catch(() => ({}));
   if (!response.ok) throw new Error(`${path} returned HTTP ${response.status}: ${payload.error || 'request failed'}`);
   return payload;
-};
-
-const redact = (value) => {
-  if (Array.isArray(value)) return value.map(redact);
-  if (!value || typeof value !== 'object') return value;
-  const hidden = /apiKey|token|secret|authorization|password/i;
-  return Object.fromEntries(Object.entries(value).filter(([key]) => !hidden.test(key)).map(([key, item]) => [key, redact(item)]));
 };
 
 try {

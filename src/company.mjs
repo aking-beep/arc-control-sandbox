@@ -1,10 +1,14 @@
 import { createServer } from 'node:http';
-import { readFile } from 'node:fs/promises';
-import { join, dirname } from 'node:path';
+import { readFile, stat } from 'node:fs/promises';
+import { join, dirname, extname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { timingSafeEqual } from 'node:crypto';
+import { redact } from './redact.mjs';
 
 const root = dirname(dirname(fileURLToPath(import.meta.url)));
+// Saved runner output. Read-only here; npm run validate / npm run phase2 write it.
+const REPORT_FILES = { integration: 'latest.json', phase2: 'phase2-latest.json' };
+const MEDIA = { '.html': 'text/html; charset=utf-8', '.js': 'text/javascript; charset=utf-8', '.css': 'text/css; charset=utf-8', '.svg': 'image/svg+xml', '.png': 'image/png', '.ico': 'image/x-icon', '.woff2': 'font/woff2', '.json': 'application/json; charset=utf-8' };
 const initial = () => ({
   customers: [{ id: 'cus-101', name: 'Aster Logistics', tier: 'Enterprise' }, { id: 'cus-102', name: 'Nova Supply', tier: 'Growth' }],
   tickets: [{ id: 'T-1001', customerId: 'cus-101', status: 'open', subject: 'Delayed shipment' }],
@@ -16,7 +20,7 @@ const initial = () => ({
   faultEffects: []
 });
 
-export function createCompany({ executionToken, getHarness, port = 8890, host = '127.0.0.1' }) {
+export function createCompany({ executionToken, getHarness, port = 8890, host = '127.0.0.1', reportsDir = join(root, 'reports'), uiDir = join(root, 'ui', 'dist') }) {
   let state = initial();
   const runs = [];
   const phase2Runs = [];
@@ -114,7 +118,32 @@ export function createCompany({ executionToken, getHarness, port = 8890, host = 
         catch (e) { return json(res, 400, { error: String(e.message) }); }
       }
       if (req.method === 'GET' && path === '/api/state') return json(res, 200, { ...state, runs: runs.slice(-40) });
-      if (req.method === 'GET' && path === '/api/health') return json(res, 200, { status: 'ok', mode: 'synthetic', gatewayConfigured: !!getHarness() });
+      if (req.method === 'GET' && path === '/api/health') return json(res, 200, { status: 'ok', mode: 'synthetic', gatewayConfigured: !!getHarness(), phase2Configured: !!getHarness()?.phase2 });
+      if (req.method === 'GET' && path.startsWith('/api/reports/')) {
+        const kind = path.slice('/api/reports/'.length);
+        const file = REPORT_FILES[kind];
+        if (!file) return json(res, 404, { error: 'unknown_report_kind', kinds: Object.keys(REPORT_FILES) });
+        const full = join(reportsDir, file);
+        try {
+          const [raw, info] = await Promise.all([readFile(full, 'utf8'), stat(full)]);
+          return json(res, 200, { kind, file: `reports/${file}`, modifiedAt: info.mtime.toISOString(), report: redact(JSON.parse(raw)) });
+        } catch (e) {
+          // Not having run the report command yet is a normal state, not an error.
+          if (e.code === 'ENOENT') return json(res, 200, { kind, file: `reports/${file}`, modifiedAt: null, report: null });
+          return json(res, 500, { error: 'report_unreadable', file: `reports/${file}`, detail: String(e.message) });
+        }
+      }
+      if (req.method === 'GET' && path.startsWith('/api/arc/evidence/')) {
+        const harness = getHarness();
+        if (!harness) return json(res, 503, { error: 'ARC Control not initialized' });
+        let id = '';
+        try { id = decodeURIComponent(path.slice('/api/arc/evidence/'.length)); } catch { /* malformed escape: rejected below */ }
+        if (!/^[A-Za-z0-9._:-]{1,128}$/.test(id)) return json(res, 400, { error: 'invalid_evidence_id' });
+        // The operator token stays in the scenario runner; only the redacted record leaves.
+        const found = await harness.scenarios.evidence(id);
+        const status = found.httpStatus === 200 ? 200 : found.httpStatus === 404 ? 404 : 502;
+        return json(res, status, { evidenceId: id, arcHttpStatus: found.httpStatus, ...(status === 200 ? { record: redact(found.body) } : { error: status === 404 ? 'evidence_not_found' : 'arc_evidence_unavailable' }) });
+      }
       if (req.method === 'GET' && path === '/api/scenarios') {
         const harness = getHarness();
         return json(res, 200, { scenarios: harness?.scenarios.list() || [], runs: runs.slice(-30) });
@@ -156,12 +185,25 @@ export function createCompany({ executionToken, getHarness, port = 8890, host = 
         return json(res, 200, result);
       }
       if (req.method !== 'GET') return json(res, 405, { error: 'method_not_allowed' });
-      const assets = { '/': ['index.html', 'text/html; charset=utf-8'], '/app.js': ['app.js', 'text/javascript; charset=utf-8'], '/style.css': ['style.css', 'text/css; charset=utf-8'] };
-      const asset = assets[path];
-      if (!asset) return json(res, 404, { error: 'not_found' });
-      const data = await readFile(join(root, 'public', asset[0]));
-      res.writeHead(200, { 'content-type': asset[1], 'cache-control': 'no-store', 'x-content-type-options': 'nosniff' });
-      res.end(data);
+      // The Validation Lab build (ui/dist) is the default page when present. The
+      // original single-file console stays available at /classic.
+      const send = async (file, cache = 'no-store') => {
+        const data = await readFile(file);
+        res.writeHead(200, { 'content-type': MEDIA[extname(file)] || 'application/octet-stream', 'cache-control': cache, 'x-content-type-options': 'nosniff', 'referrer-policy': 'no-referrer' });
+        res.end(data);
+      };
+      const exists = file => stat(file).then(info => info.isFile(), () => false);
+      const legacy = { '/classic': 'index.html', '/classic/': 'index.html', '/app.js': 'app.js', '/style.css': 'style.css' };
+      if (legacy[path]) return send(join(root, 'public', legacy[path]));
+      if (path === '/' || path === '/index.html') {
+        const built = join(uiDir, 'index.html');
+        return send(await exists(built) ? built : join(root, 'public', 'index.html'));
+      }
+      const asset = path.match(/^\/assets\/([A-Za-z0-9._-]+)$/);
+      if (asset && !asset[1].startsWith('.') && await exists(join(uiDir, 'assets', asset[1]))) {
+        return send(join(uiDir, 'assets', asset[1]), 'public, max-age=31536000, immutable');
+      }
+      return json(res, 404, { error: 'not_found' });
     } catch (e) { return json(res, 500, { error: 'internal_error', detail: String(e.message) }); }
   });
   return {
