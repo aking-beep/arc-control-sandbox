@@ -12,7 +12,7 @@ import { ReportImport } from '../../components/lab/ReportImport'
 import { useReports } from '../../api/ReportsProvider'
 import { BASELINE_NOTE, integrationBaseline, phase2Baseline } from '../../data/baseline'
 import { usePhase2 } from '../../lib/phase2'
-import { STAGE_LABEL, useFindingStates } from '../../lib/findings'
+import { STAGE_LABEL, useFindingStates, useUnmappedFailures } from '../../lib/findings'
 import type { DataSource } from '../../api/types'
 import { ORIGINAL } from '../../data/catalog'
 import { ENDPOINTS } from '../../data/registry'
@@ -22,6 +22,7 @@ export function CommandCenter() {
   const { latestRunById, running, runAll, runPhase2All, runs, state, stressRuns, scenarios, arcReady } = useData()
   const p2 = usePhase2()
   const findings = useFindingStates()
+  const unmapped = useUnmappedFailures()
   const liveCounts = ORIGINAL.reduce((acc, s) => {
     const st = runStatus(latestRunById.get(s.id))
     acc[st] = (acc[st] ?? 0) + 1
@@ -141,6 +142,11 @@ export function CommandCenter() {
         </Section>
 
         <Section title="Security findings" aside={<span className="text-[11.5px] text-faint">From Phase 2 checks</span>} pad={false}>
+          {unmapped.length > 0 && (
+            <Link to="/lab/findings" className="block border-b border-critical/30 bg-critical-50 px-4 py-2.5 text-[12.5px] text-critical-ink hover:underline">
+              {unmapped.length} failing Phase 2 check{unmapped.length === 1 ? '' : 's'} with no finding yet: <span className="font-mono">{unmapped.map(r => r.spec.id).join(', ')}</span>
+            </Link>
+          )}
           <ul className="divide-y divide-line">
             {findings.map(st => {
               const f = st.finding

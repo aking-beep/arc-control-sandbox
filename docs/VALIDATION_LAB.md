@@ -27,7 +27,7 @@ The export overwrote the root `package.json` and `README.md` and mixed `.tsx` fi
 npm test                 # backend + UI contract tests
 npm run ui:install       # once
 npm run ui:build         # type check + build ui/dist
-npm start                # needs ../arc-control built; serves the Lab on http://127.0.0.1:8890
+npm start                # needs ../arc-control built (or ARC_REPO_PATH); serves the Lab on http://127.0.0.1:8890
 npm run validate         # 17 scenarios → reports/latest.json      (Lab shows it as RECORDED)
 npm run phase2           # Phase 2 + stress → reports/phase2-latest.json (Lab shows it as RECORDED)
 ```
@@ -58,7 +58,7 @@ Scenario observations now also carry `correlationId`: the id the runner already 
 | Screen | Live source | Fallbacks (labelled) |
 | --- | --- | --- |
 | Command Center | `/api/health`, `/api/scenarios`, `/api/phase2`, `/api/state`, session stress runs | Saved reports (RECORDED), `docs/PHASE_2_READINESS.md` (BASELINE) |
-| Security Findings | Phase 2 checks `concurrent-idempotency` (ARC-SEC-001) and `policy-change-before-release` (ARC-SEC-002) | Saved Phase 2 report, then BASELINE |
+| Security Findings | Phase 2 checks `concurrent-idempotency` (ARC-SEC-001), `policy-change-before-release` (ARC-SEC-002), `retired-agent-final` (ARC-SEC-003), plus any other failing check | Saved Phase 2 report, then BASELINE |
 | Scenario Lab | 17 integration scenarios + 39 Phase 2 checks, each runnable | Saved reports; Phase 2 catalogue copy when the runner is unavailable |
 | Live Action Inspector | Integration runs (decision, policy, evidence id, correlation id, backend effect), ARC evidence record on demand, finding traces from the reproducing check | ILLUSTRATIVE example only when "All data" is selected |
 | Stress Lab | `/api/stress`, `/api/load` | Three-seed matrix from the saved Phase 2 report |
@@ -73,32 +73,64 @@ Scenario observations now also carry `correlationId`: the id the runner already 
 - Run buttons are enabled only when Meridian is reachable **and** reports `gatewayConfigured: true` (Phase 2 also needs `phase2Configured`).
 - The browser never calls ARC and holds no credential. `tests/ui-contract.test.mjs` fails if UI source sets the connector header, sends a bearer token, calls `/v1/` or `:8787`, or reads server secrets.
 
-## Results in this session (26 Oct 2026)
+## Measured results — 26 Oct 2026
+
+| Piece | Revision |
+| --- | --- |
+| Sandbox | `bdf2c21` (this branch, before the result-driven fixes below) |
+| ARC Control `main` | `162d00dcb89e23e4bcbb8328e0f74f63075b1a3b` |
+| Node | 22.22.0 |
+
+`ARC_REPO_PATH` pointed at a fresh clone of `aking-beep/arc-control`. One loopback process with MemoryStore. Not an enterprise certification.
 
 | Check | Command | Result |
 | --- | --- | --- |
-| Backend + UI contract unit tests | `npm test` | **12/12 pass** (3 company, 3 fault/stress, 6 new UI-contract) |
-| UI type check | `npm run ui:typecheck` | **pass**, 0 errors |
-| UI production build | `npm run ui:build` | **pass** (one >500 kB chunk warning) |
-| UI dependency audit | `npm audit` in `ui/` | 0 high; 2 moderate in react-router 6.x (see gaps) |
-| Preflight | `npm run preflight` | **NOT READY**: `../arc-control` is not present in this environment |
-| Integrated stack | `npm start` | **did not start**: ARC Control modules not found |
-| Original 17 scenarios | `npm run validate` | **not run**: no running stack (`fetch failed`) |
-| Phase 2 + stress | `npm run phase2` | **not run**: no running stack (`fetch failed`) |
-| UI smoke, Meridian without ARC | Playwright over all 23 routes | every route rendered, 0 console errors; run buttons disabled; Phase 2 shows BASELINE 31/2/5/1; both findings open; built bundle contains no token |
-| UI render of a recorded Phase 2 report | Playwright with a synthetic, uncommitted fixture | both findings shown as FAIL · RECORDED with observed 8 refunds / 1 refund; Inspector shows the ARC-SEC-001 control failure |
+| ARC Control build, tests, evals | `npm run verify` (in arc-control) | **pass**: 356/356 tests, 66/66 eval properties |
+| Sandbox unit + UI contract tests | `npm test` | **12/12 pass** |
+| UI type check / build | `npm run ui:typecheck`, `npm run ui:build` | **pass** (one chunk-size warning) |
+| Preflight | `npm run preflight` | **READY** |
+| Original 17 scenarios | `npm run validate` | **17/17 pass**; 13 results carry a `correlationId` (the 4 without are non-agent requests or approval releases) |
+| Phase 2 + stress + 17 recheck | `npm run phase2` | **exit 1**: 30 pass, **3 fail**, 5 unsupported, 1 not implemented. Stress 9/9 runs pass. 17/17 still pass afterwards |
+| ARC Assurance (after Phase 2, same process) | `POST /api/assurance` | 2 pass · 4 fail · 2 not_assessable · 1 not_applicable · 0 attested |
+| API smoke on live stack | curl | `/api/arc/evidence/:id` → 200 with ARC record (`integrityDigest` present, no credential keys); unknown id → 404; malformed id → 400; `/api/reports/*` serve the saved reports |
+| Live UI, Playwright | Lab on :8890 against the stack | Command Center shows Phase 2 LIVE 30/3/5/1 and three findings; a scenario run from the UI passes; Inspector shows its correlation id, DENY and 0 refunds; its ARC evidence record loads; Assurance run renders per-control results; stress preset 100 reconciles 50/50; 0 console errors |
 
-The 17-scenario and Phase 2 results therefore remain the committed measurement in `docs/PHASE_2_READINESS.md` (17/17; Phase 2 31 pass, 2 fail, 5 unsupported, 1 not implemented). They were **not** re-executed here. Phase 2 assertions are unchanged, and the two known failures are expected to keep `npm run phase2` non-zero until ARC Control is fixed.
+### Phase 2 failures (assertions unchanged)
+
+| Check | Error | Finding | Status vs aa2f37c |
+| --- | --- | --- | --- |
+| `concurrent-idempotency` | round 1 produced 8 refunds for one idempotency key | ARC-SEC-001 | still failing |
+| `policy-change-before-release` | queued refund was released after a stricter policy (HTTP 200, outcome executed, effects 1) | ARC-SEC-002 | still failing |
+| `retired-agent-final` | activate retired agent HTTP 200 | **ARC-SEC-003 (new)** | **regressed**: passed against aa2f37c |
+
+ARC-SEC-003, from source in 162d00d: `POST /v1/agents/:id/activate` calls `gateway.admin.setAgentStatus(id, 'active')`, which calls `registry.resume()` → `#setStatus`. That path skips the retired guard that `registry.activate()` has, so a retired agent can be set active again. Because `issueKey` only refuses agents whose status is `retired`, a revived agent could then be issued a new credential (inferred from source; the check stops at the first failed assertion and did not exercise it). Fix belongs in arc-control: route activate through `registry.activate()`, or add the guard to `resume()`.
+
+`npm run phase2` therefore exits non-zero. That is the result, not a broken runner.
+
+### Stress (three seeds)
+
+| Preset | Seed | Requests/s | p50 / p95 / p99 (ms) | Refunds exp/obs | Other mutations | Unexpected |
+| --- | --- | --- | --- | --- | --- | --- |
+| 100 · c5 | 1 / 2 / 3 | 502.51 / 613.50 / 649.35 | 10/17/20 · 9/14/16 · 5/14/14 | 50/50 each | 0 | 0 |
+| 500 · c10 | 1 / 2 / 3 | 657.03 / 788.64 / 865.05 | 16/25/29 · 12/20/24 · 12/19/20 | 250/250 each | 0 | 0 |
+| 1000 · c20 | 1 / 2 / 3 | 932.84 / 1031.99 / 1046.03 | 22/31/38 · 18/29/30 · 22/28/34 | 500/500 each | 0 | 0 |
+
+### Fixed because of the live run
+
+- **Assurance screen crash.** The export treated `summary.controls` as an array; ARC returns a count. Per-control results now come from the run's `assessments[]`.
+- **New failures were invisible.** Findings covered only the two known checks. ARC-SEC-003 was added, and any other failing Phase 2 check without a finding is now listed on the Findings page and the Command Center.
+- **Baseline** figures in the UI now point at this measurement (30/3/5/1, assurance 2/4/2/1/0). The earlier aa2f37c run stays in `docs/PHASE_2_READINESS.md`.
 
 ## Remaining integration gaps
 
-1. **Not run end to end here.** The 17 scenarios, Phase 2 and the stress matrix must be re-run with a built `../arc-control` checkout before this branch is treated as verified, then the Lab inspected against those live results.
-2. **No live ARC inventory.** Agents, tools and policies come from `src/start.mjs`, not ARC. Phase 2 adds probe agents, tools and temporary `MER-P2-*` policies that the Lab cannot list. Needs read-only `GET /api/arc/{agents,tools,policies,approvals}` proxies.
-3. **Effects are matched by count, not id.** Meridian's mutation log has no correlation id, so the Inspector cannot tie one mutation to one ARC action. Passing `correlationId` through the connector to `/internal/*` would close this.
-4. **Phase 2 checks return no evidence ids.** The two findings' traces show counts and sequence only.
-5. **Run history is in memory.** Session stress runs and Phase 2 runs disappear on restart or `/api/reset`; only `npm run validate` / `npm run phase2` persist results.
-6. **ARC build is not reported by the running process.** The Lab shows the ARC git revision recorded in the saved Phase 2 report, which may differ from what is running.
-7. **Operator endpoints are unauthenticated.** As before, `/api/*` is loopback-only with no operator auth or CSRF protection. Serving the Lab from anything other than `127.0.0.1` is not safe.
-8. **react-router-dom 6.30.6** carries two moderate advisories (backslash open redirect in `<Link>`, SSR hydration). The Lab only links to fixed internal paths and does not use SSR; clearing them needs react-router 7.
-9. **Phase 2 mutates shared ARC state.** Running it from the Lab registers probe agents, tools and policies in the live ARC process, which ARC Assurance then reports. Run Phase 2 and the 17 scenarios separately, as the readiness doc advises.
-10. **Bundle size.** One 540 kB JS chunk; route-level code splitting would help but is cosmetic for a local tool.
+1. **Three ARC defects stay open** (ARC-SEC-001, 002, 003). They are fixed in arc-control, not here, and stay listed until independently retested.
+2. **`mcp-drift-runtime-enforcement` may be mis-labelled.** It is a static `unsupported` entry in `phase2.mjs`, but ARC 162d00d ships evals named "an MCP tool rewritten after registration is refused at execution" and "a write tool verifies its pin before every call". The capability may now exist; it needs a real Phase 2 check before the label changes either way.
+3. **No live ARC inventory.** Agents, tools and policies come from `src/start.mjs`, not ARC. Phase 2 probe agents/tools and temporary `MER-P2-*` policies are not listed. Needs read-only `GET /api/arc/{agents,tools,policies,approvals}`.
+4. **Effects matched by count, not id.** Meridian's mutation log has no correlation id. Approval releases (`/v1/approvals/:id/execute`) return no agent correlation id to the runner.
+5. **Phase 2 checks return no evidence ids**, so finding traces show counts and sequence only.
+6. **Run history is in memory**; only `npm run validate` / `npm run phase2` persist results (`reports/` is git-ignored).
+7. **ARC build of the running process is not reported**; the Lab shows the revision recorded in the saved Phase 2 report.
+8. **Operator endpoints are unauthenticated** and loopback-only, as before.
+9. **react-router-dom 6.30.6** has two moderate advisories; clearing them needs react-router 7.
+10. **Phase 2 mutates shared ARC state** (probe agents, tools, policies), which ARC Assurance then reports as failures. Run it separately from the 17.
+11. **Bundle size**: one ~540 kB chunk.

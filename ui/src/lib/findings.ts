@@ -19,13 +19,6 @@ export interface FindingState {
   check?: Phase2Resolved
 }
 
-/** Pull the effect count out of the phase2.mjs failure messages. */
-export function effectsFromError(error?: string): number | null {
-  if (!error) return null
-  const m = error.match(/produced (\d+) refunds|effects (\d+)\)/)
-  return m ? Number(m[1] ?? m[2]) : null
-}
-
 function stateOf(f: Finding, check: Phase2Resolved | undefined): FindingState {
   const result = check && (check.status === 'PASS' || check.status === 'FAIL' || check.status === 'ERROR') ? check : undefined
   if (!result) {
@@ -42,11 +35,11 @@ function stateOf(f: Finding, check: Phase2Resolved | undefined): FindingState {
       observedEffects: f.expectedEffects, observedLabel: f.expected.value, check: result,
     }
   }
-  const n = result.status === 'FAIL' ? effectsFromError(result.run?.error) : null
+  const seen = result.status === 'FAIL' ? f.describe(result.run?.error) : null
   return {
     finding: f, stage: 'open', checkStatus: result.status, source: result.source, sourceNote, at: result.at, error: result.run?.error,
-    observedEffects: n,
-    observedLabel: result.status === 'ERROR' ? 'Unknown — check errored' : n === null ? 'See runner error' : f.id === 'ARC-SEC-002' ? `Executed · ${n} refund${n === 1 ? '' : 's'}` : String(n),
+    observedEffects: seen?.effects ?? null,
+    observedLabel: result.status === 'ERROR' ? 'Unknown — check errored' : seen?.label ?? 'See runner error',
     check: result,
   }
 }
@@ -63,6 +56,18 @@ export function useFindingStates(): FindingState[] {
 
 export function useFindingState(id?: string): FindingState | undefined {
   return useFindingStates().find(s => s.finding.id === id)
+}
+
+/**
+ * Failing Phase 2 checks that no finding covers yet. They are shown as
+ * unclassified failures so a new regression is visible before anyone writes it up.
+ */
+export function useUnmappedFailures(): Phase2Resolved[] {
+  const p2 = usePhase2()
+  return useMemo(() => {
+    const mapped = new Set(FINDINGS.map(f => f.check))
+    return p2.all.filter(r => (r.status === 'FAIL' || r.status === 'ERROR') && !mapped.has(r.spec.id))
+  }, [p2])
 }
 
 export const STAGE_LABEL: Record<FindingStage, string> = {

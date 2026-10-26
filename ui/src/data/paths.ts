@@ -44,6 +44,7 @@ export const PATHS: PathDef[] = [
     label: 'Refuse before policy',
     contract: 'Reject bad identity, tool, input, lifecycle state or bypass before any rule runs.',
     scenarios: ['unknown-tool', 'wrong-type', 'suspend-agent', 'disable-tool', 'operator-isolation', 'direct-bypass'],
+    knownBreak: { findingId: 'ARC-SEC-003', summary: 'Retired agent reactivated (activate → 200)' },
   },
 ]
 
@@ -66,4 +67,5 @@ export const PATH_LABEL: Record<ArcPath, string> = {
 export const ADJACENT_CHECKS: Record<string, string[]> = {
   'ARC-SEC-001': ['approval-consume-race', 'concurrent-distinct-refunds', 'connector-timeout-after-effect'],
   'ARC-SEC-002': ['policy-tightening-new-actions', 'approval-expires', 'kill-switch-blocks-new-work'],
+  'ARC-SEC-003': ['revoked-credential', 'key-rotation', 'draft-agent-cannot-act'],
 }

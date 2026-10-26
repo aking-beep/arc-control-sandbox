@@ -50,6 +50,7 @@ export const ORIGINAL: CatalogScenario[] = [
 const PHASE2_DETAIL: Record<string, Partial<CatalogScenario>> = {
   'concurrent-idempotency': { agent: 'finance-agent', tool: 'finance.refund', expected: 'ONCE', expectedEffect: '1 refund per key, 8 parallel × 5 rounds', baseline: 'FAIL', note: 'Reproduces finding ARC-SEC-001' },
   'policy-change-before-release': { agent: 'finance-agent', tool: 'finance.refund', expected: 'REFUSED', expectedEffect: '0 refunds after deny published', baseline: 'FAIL', note: 'Reproduces finding ARC-SEC-002' },
+  'retired-agent-final': { expected: 'REFUSED', expectedEffect: 'activate → 409; revoked key refused', baseline: 'FAIL', note: 'Reproduces finding ARC-SEC-003' },
   'concurrent-distinct-refunds': { agent: 'finance-agent', tool: 'finance.refund', expectedEffect: '20 refunds for 20 requests' },
   'approval-consume-race': { agent: 'finance-agent', tool: 'finance.refund', expectedEffect: '1 refund per approval, 8 parallel releases' },
   'wrong-role-approval': { agent: 'finance-agent', tool: 'finance.refund', expectedEffect: '0 refunds' },

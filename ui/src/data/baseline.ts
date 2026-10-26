@@ -1,17 +1,18 @@
 /**
- * BASELINE — the last recorded Phase 2 measurement, as committed in
- * docs/PHASE_2_READINESS.md (26 Oct 2026, sandbox 6ae2514, ARC Control aa2f37c).
- * Shown only when neither a run on the current server nor a saved
- * reports/phase2-latest.json is available, and always labelled as such.
+ * BASELINE — the latest committed measurement, recorded in docs/VALIDATION_LAB.md
+ * (26 Oct 2026, ARC Control 162d00d). The earlier run against ARC aa2f37c is in
+ * docs/PHASE_2_READINESS.md. Shown only when neither a run on the current server
+ * nor a saved reports/*.json is available, and always labelled as such.
  */
-export const BASELINE_NOTE = 'Recorded in docs/PHASE_2_READINESS.md (26 Oct 2026 · sandbox 6ae2514 · ARC aa2f37c) · not re-run in this session'
+export const BASELINE_NOTE = 'Measured 26 Oct 2026 against ARC 162d00d (docs/VALIDATION_LAB.md) · not re-run in this session'
 
 export const integrationBaseline = { passed: 17, total: 17, label: 'Original integration' }
 
-export const phase2Baseline = { pass: 31, fail: 2, unsupported: 5, notImplemented: 1 }
+export const phase2Baseline = { pass: 30, fail: 3, unsupported: 5, notImplemented: 1 }
 export const phase2Total = phase2Baseline.pass + phase2Baseline.fail + phase2Baseline.unsupported + phase2Baseline.notImplemented
 
-export const assuranceBaseline = { pass: 3, fail: 3, not_assessable: 2, not_applicable: 1, attested: 0 } as const
+/** After Phase 2 and stress on the same process; probe agents and disabled probe tools count against 001/002/005/008. */
+export const assuranceBaseline = { pass: 2, fail: 4, not_assessable: 2, not_applicable: 1, attested: 0 } as const
 
 /**
  * `regression_passing` means the Phase 2 check passed on some run. It is not
@@ -23,6 +24,8 @@ export type FindingStage = 'open' | 'fix_proposed' | 'regression_passing' | 'res
 export interface Finding {
   id: string
   title: string
+  /** Short label for pickers. */
+  short: string
   severity: 'critical' | 'high'
   component: string
   control: string
@@ -31,9 +34,11 @@ export interface Finding {
   check: string
   reproduction: string[]
   expected: { label: string; value: string }
-  /** Last recorded observation (docs/PHASE_2_READINESS.md). Replaced by live or saved results when present. */
-  baselineActual: { label: string; value: string; effects: number }
+  /** Last committed observation. Replaced by live or saved results when present. */
+  baselineActual: { label: string; value: string; effects: number | null }
   expectedEffects: number
+  /** Reads the observed value out of the check's failure message. */
+  describe: (error?: string) => { effects: number | null; label: string } | null
   evidence: string
   relatedScenario: string
 }
@@ -42,6 +47,7 @@ export const FINDINGS: Finding[] = [
   {
     id: 'ARC-SEC-001',
     title: 'Concurrent idempotency failure',
+    short: 'Parallel duplicates',
     severity: 'critical',
     component: 'ARC action gateway · idempotency handling under concurrent requests',
     control: 'Execution integrity — one authorization yields at most one effect (invariant 4)',
@@ -55,12 +61,14 @@ export const FINDINGS: Finding[] = [
     expected: { label: 'Refunds executed', value: '1' },
     baselineActual: { label: 'Refunds executed', value: '8', effects: 8 },
     expectedEffects: 1,
+    describe: e => { const m = e?.match(/produced (\d+) refunds/); return m ? { effects: Number(m[1]), label: m[1] } : null },
     evidence: 'phase2.mjs returns only the failing round and its refund count; per-request evidence ids are not collected by the check.',
     relatedScenario: 'idempotency',
   },
   {
     id: 'ARC-SEC-002',
     title: 'Execution-time policy revalidation failure',
+    short: 'Stale approval',
     severity: 'critical',
     component: 'ARC approval release · resume() executes the decision stored at submit time',
     control: 'Authorization currency — release must satisfy the policy in force at release time',
@@ -75,8 +83,31 @@ export const FINDINGS: Finding[] = [
     expected: { label: 'Release outcome', value: 'Refused · 0 refunds' },
     baselineActual: { label: 'Release outcome', value: 'Executed · 1 refund', effects: 1 },
     expectedEffects: 0,
+    describe: e => { const m = e?.match(/outcome (\w+), effects (\d+)\)/); return m ? { effects: Number(m[2]), label: `${m[1][0].toUpperCase()}${m[1].slice(1)} · ${m[2]} refund${m[2] === '1' ? '' : 's'}` } : null },
     evidence: 'phase2.mjs reports the release HTTP status, outcome and effect count in its error string; it does not collect evidence ids.',
     relatedScenario: 'refund-approve',
+  },
+  {
+    id: 'ARC-SEC-003',
+    title: 'Retired agent can be reactivated',
+    short: 'Retired agent revived',
+    severity: 'high',
+    component: 'ARC control API · POST /v1/agents/:id/activate → admin.setAgentStatus → registry.resume()',
+    control: 'Identity lifecycle — retirement is final; a withdrawn agent can only return by being registered again',
+    summary: 'After retiring an agent, POST /v1/agents/:id/activate returned HTTP 200 instead of 409. First observed against ARC 162d00d; the same check passed against aa2f37c.',
+    check: 'retired-agent-final',
+    reproduction: [
+      'Register a throwaway agent and issue it a key.',
+      'POST /v1/agents/:id/retire → 200, status retired, credentials revoked.',
+      'POST /v1/agents/:id/activate. Expected 409 conflict.',
+      'In 162d00d the route calls admin.setAgentStatus(…, \'active\'), which calls registry.resume() → #setStatus. That path skips the retired guard that registry.activate() has (read from source, not executed separately).',
+    ],
+    expected: { label: 'Activate response', value: 'HTTP 409' },
+    baselineActual: { label: 'Activate response', value: 'HTTP 200', effects: 1 },
+    expectedEffects: 0,
+    describe: e => { const m = e?.match(/activate retired agent HTTP (\d+)/); return m ? { effects: m[1] === '409' ? 0 : 1, label: `HTTP ${m[1]}` } : null },
+    evidence: 'phase2.mjs stops at the first failed assertion, so the follow-up check that the revoked key is still refused was not reached.',
+    relatedScenario: 'suspend-agent',
   },
 ]
 

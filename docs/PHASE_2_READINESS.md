@@ -1,5 +1,7 @@
 # Phase 2 readiness
 
+> A later run against ARC Control `162d00d` (26 Oct 2026) found a third failure, `retired-agent-final`, which passed here. See `docs/VALIDATION_LAB.md`. This document is kept as the `aa2f37c` record.
+
 Measured on 26 Oct 2026 at 11:21 AM Pacific, against a local loopback process. This is not an enterprise certification.
 
 | Piece | Revision |

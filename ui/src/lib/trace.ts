@@ -66,6 +66,8 @@ export interface Trace {
   elapsedMs: number | null
   /** Set on traces reconstructed from a security finding (BASELINE source). */
   findingId?: string
+  /** What one effect is, when it is not a Meridian business mutation. */
+  effectUnit?: string
   /** Number of identical requests sent in parallel (ARC-SEC-001). */
   parallel?: number
   /** Verdict overrides where the generic wording would mislead. */

@@ -7,7 +7,7 @@ Meridian is a fictional company with six operational departments, a real in-proc
 ## Current verification level
 
 - Verified here: local backend unit tests (`npm test`), including refusal of unauthenticated direct writes, fault-endpoint isolation, the UI's server routes, and a check that browser source carries no credentials.
-- Measured against a real ARC Control build on 26 Oct 2026: see `docs/PHASE_2_READINESS.md` (17/17 integration; Phase 2 31 pass, **2 fail**, 5 unsupported, 1 not implemented).
+- Latest run against ARC Control `162d00d` (26 Oct 2026, `docs/VALIDATION_LAB.md`): 17/17 integration; Phase 2 30 pass, **3 fail**, 5 unsupported, 1 not implemented; stress 9/9. The earlier `aa2f37c` run (2 fail) is in `docs/PHASE_2_READINESS.md`.
 - **Not verified here:** actual end-to-end integration against a built checkout of ARC Control; ARC packages are not in this archive. The integration adapter is based on source inspected from the GitHub repository and needs a real integration run.
 - Never interpret a UI badge as proof without the observed effects and evidence. The scenarios assert these whenever ARC has made a decision.
 
@@ -109,11 +109,11 @@ npm run ui:build     # type check + production build into ui/dist, served by npm
 npm run ui:dev       # Vite dev server on http://127.0.0.1:5173, proxying /api to :8890
 ```
 
-`npm run phase2` exits non-zero while any Phase 2 check fails. On the current ARC Control build two do (`concurrent-idempotency`, `policy-change-before-release`); that exit code is the result, not a broken runner.
+`npm run phase2` exits non-zero while any Phase 2 check fails. Against ARC `162d00d` three do (`concurrent-idempotency`, `policy-change-before-release`, `retired-agent-final`); that exit code is the result, not a broken runner.
 
 ## Meridian Validation Lab UI
 
-`ui/` is the Magic Patterns redesign, integrated as a separate package so the backend keeps zero runtime dependencies. It talks only to same-origin `/api/*` on the Meridian server; it never calls ARC directly and never holds the operator token, agent keys or the connector token. Every figure on screen carries its source: LIVE (this server), RECORDED (`reports/*.json`), BASELINE (`docs/PHASE_2_READINESS.md`), REPO (source code) or ILLUSTRATIVE. Unsupported and not-implemented checks are never counted as passes, and the two security findings stay listed until the ARC fix is independently retested. Details, the endpoint map and known gaps: [`docs/VALIDATION_LAB.md`](docs/VALIDATION_LAB.md).
+`ui/` is the Magic Patterns redesign, integrated as a separate package so the backend keeps zero runtime dependencies. It talks only to same-origin `/api/*` on the Meridian server; it never calls ARC directly and never holds the operator token, agent keys or the connector token. Every figure on screen carries its source: LIVE (this server), RECORDED (`reports/*.json`), BASELINE (`docs/PHASE_2_READINESS.md`), REPO (source code) or ILLUSTRATIVE. Unsupported and not-implemented checks are never counted as passes; the security findings stay listed until the ARC fix is independently retested, and any failing Phase 2 check without a finding is listed too. Details, the endpoint map and known gaps: [`docs/VALIDATION_LAB.md`](docs/VALIDATION_LAB.md).
 
 Phase 2 is a separate catalogue. It does not replace the 17 integration scenarios. `reports/phase2-latest.json` records passes, failures, unsupported product gaps, and not-implemented checks. A green sandbox run is not an enterprise certification.
 

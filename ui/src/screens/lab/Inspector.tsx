@@ -73,7 +73,9 @@ export function Inspector() {
               <AlertOctagon className="mt-0.5 size-4 shrink-0 text-critical-ink" />
               <div className="text-[13px] leading-relaxed text-ink">
                 <span className="font-semibold text-critical-ink">Control failure{trace.findingId ? ` · ${trace.findingId}` : ''}.</span>{' '}
-                Expected {trace.expectedEffect} business effect{trace.expectedEffect === 1 ? '' : 's'}; Meridian recorded {trace.actualEffect}.
+                {trace.effectUnit
+                  ? <>Expected {trace.expectedEffect} {trace.effectUnit}s; ARC applied {trace.actualEffect}.</>
+                  : <>Expected {trace.expectedEffect} business effect{trace.expectedEffect === 1 ? '' : 's'}; Meridian recorded {trace.actualEffect}.</>}
                 {trace.source === 'baseline' && <span className="text-muted"> Committed Phase 2 measurement. Run <span className="font-mono">{trace.scenarioId}</span> from the Scenario Lab to reproduce it on this server.</span>}
               </div>
             </div>
@@ -192,9 +194,9 @@ function DecisionColumn({ t }: { t: Trace }) {
 
 function EffectColumn({ t, breach }: { t: Trace; breach: boolean }) {
   const n = t.actualEffect
-  const unit = t.tool.startsWith('finance') ? 'refund' : t.tool.startsWith('it') ? 'deployment' : t.tool.startsWith('sales') ? 'export' : 'mutation'
+  const unit = t.effectUnit ?? (t.tool.startsWith('finance') ? 'refund' : t.tool.startsWith('it') ? 'deployment' : t.tool.startsWith('sales') ? 'export' : 'mutation')
   return (
-    <InspectorColumn step="Meridian business effect" tone={breach ? 'critical' : undefined}
+    <InspectorColumn step={t.effectUnit ? 'Observed effect' : 'Meridian business effect'} tone={breach ? 'critical' : undefined}
       verdict={<span className={breach ? 'text-critical-ink' : 'text-ink'}>{n === null ? 'Effect unknown' : `${n} ${unit}${n === 1 ? '' : 's'} executed`}</span>}
       sub={t.actualEffectBasis}>
       <Row k="Target system" mono>{t.targetSystem}</Row>

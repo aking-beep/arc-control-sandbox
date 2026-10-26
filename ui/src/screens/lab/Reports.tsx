@@ -96,7 +96,7 @@ export function Reports() {
           ) : (
             <p>Phase 2 security testing (committed baseline, docs/PHASE_2_READINESS.md) recorded {phase2Baseline.pass} passing checks, <strong className="text-critical-ink">{phase2Baseline.fail} failing checks</strong>, {phase2Baseline.unsupported} unsupported capabilities and {phase2Baseline.notImplemented} unimplemented check. Unsupported and unimplemented checks are not passes.</p>
           )}
-          <p>{findings.filter(f => f.stage !== 'resolved').length} critical findings remain open: {findings.map(f => `${f.finding.id} (${f.finding.title.toLowerCase()}; ${f.finding.check} ${f.checkStatus}, ${STAGE_LABEL[f.stage].toLowerCase()})`).join(' and ')}.</p>
+          <p>{findings.filter(f => f.stage !== 'resolved').length} findings remain open: {findings.map(f => `${f.finding.id} (${f.finding.severity}, ${f.finding.title.toLowerCase()}; ${f.finding.check} ${f.checkStatus}, ${STAGE_LABEL[f.stage].toLowerCase()})`).join('; ')}.</p>
           <p>ARC Assurance baseline: {assuranceBaseline.pass} pass, {assuranceBaseline.fail} fail, {assuranceBaseline.not_assessable} not_assessable, {assuranceBaseline.not_applicable} not_applicable, {assuranceBaseline.attested} attested. This is not a certification.</p>
         </section>
 

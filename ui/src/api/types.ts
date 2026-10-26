@@ -169,17 +169,29 @@ export interface StressResult {
 
 export type AssuranceStatus = 'pass' | 'fail' | 'not_assessable' | 'not_applicable' | 'attested'
 
-/** UNVERIFIED — ARC Control assurance summary. Only `totals` is referenced by the existing app.js. */
+/** ARC GET /v1/assurance/summary, as returned by ARC 2.0 (162d00d). `controls` is a count. */
 export interface AssuranceSummary {
   totals?: Partial<Record<AssuranceStatus, number>>
-  controls?: Array<{ id: string; title?: string; status: AssuranceStatus; [k: string]: unknown }>
+  controls?: number
+  controlsEnabled?: number
+  openFindings?: Partial<Record<'critical' | 'high' | 'medium' | 'low' | 'info', number>>
+  [k: string]: unknown
+}
+
+/** One control's result from ARC POST /v1/assurance/runs → assessments[]. */
+export interface AssuranceAssessment {
+  controlId: string
+  status: AssuranceStatus
+  assurance?: string
+  summary?: string
+  observations?: unknown[]
   [k: string]: unknown
 }
 
 /** POST /api/assurance response */
 export interface AssuranceResult {
   pass: boolean
-  run?: unknown
+  run?: { run?: unknown; assessments?: AssuranceAssessment[] }
   summary?: AssuranceSummary
   error?: string
   response?: unknown

@@ -29,7 +29,7 @@ export function TracePicker({ value, onChange, runs, showExample }: {
               className={`flex h-8 items-center gap-2 rounded-md px-2.5 text-[12.5px] transition-colors duration-150 ${on ? 'bg-critical-50 text-ink shadow-[inset_0_0_0_1px_var(--color-critical)]' : 'text-muted hover:bg-canvas hover:text-ink shadow-[inset_0_0_0_1px_var(--color-line)]'}`}>
               <span className={`size-1.5 rounded-full ${s.checkStatus === 'PASS' ? 'bg-success' : 'bg-critical'}`} />
               <span className="font-mono text-[12px] text-ink">{id}</span>
-              <span className="whitespace-nowrap">{id === 'ARC-SEC-001' ? 'Parallel duplicates' : 'Stale approval'}</span>
+              <span className="whitespace-nowrap">{s.finding.short}</span>
               <SourceTag source={s.source} />
             </button>
           )

@@ -24,9 +24,9 @@ export function Assurance() {
   const [open, setOpen] = useState<string | null>(null)
   const latest = assuranceRuns[0]
   const liveTotals = latest?.result.summary?.totals
-  const liveControls = latest?.result.summary?.controls ?? []
+  const assessments = Array.isArray(latest?.result.run?.assessments) ? latest!.result.run!.assessments! : []
   const totals = liveTotals ?? assuranceBaseline
-  const controlOf = (id: string) => liveControls.find(c => c.id === id)
+  const controlOf = (id: string) => assessments.find(c => c.controlId === id)
 
   return (
     <>
@@ -55,21 +55,21 @@ export function Assurance() {
       <div className="grid gap-5 lg:grid-cols-[minmax(0,1.4fr)_minmax(0,1fr)]">
         <Section title="Control inventory" aside={<span className="text-[11.5px] text-faint">Click a control for detail</span>} pad={false}>
           <table className="w-full border-collapse">
-            <thead><tr><Th>Control</Th><Th>Title</Th><Th>Status</Th></tr></thead>
+            <thead><tr><Th>Control</Th><Th>Assessment</Th><Th>Status</Th></tr></thead>
             <tbody>
               {IDS.map(id => {
                 const c = controlOf(id)
                 return (
                   <tr key={id} onClick={() => setOpen(id)} className="cursor-pointer transition-colors duration-100 hover:bg-canvas">
                     <Td className="font-mono text-[12px] font-medium">{id}</Td>
-                    <Td className="text-[12.5px]">{c?.title ?? <span className="text-faint">{DOCUMENTED[id] ? DOCUMENTED[id].split('.')[0] : 'Title supplied by ARC assessment'}</span>}</Td>
+                    <Td className="text-[12.5px]">{c?.summary ?? <span className="text-faint">{DOCUMENTED[id] ? DOCUMENTED[id].split('.')[0] : 'Result supplied by ARC assessment'}</span>}</Td>
                     <Td>{c ? <AssuranceBadge status={c.status} /> : <span className="text-[12px] text-faint">Not loaded</span>}</Td>
                   </tr>
                 )
               })}
             </tbody>
           </table>
-          <p className="border-t border-line px-4 py-2.5 text-[11.5px] leading-relaxed text-faint">The baseline gives totals only; per-control statuses appear after an assessment run returns them. The summary schema is inferred from app.js and should be verified against arc-control.</p>
+          <p className="border-t border-line px-4 py-2.5 text-[11.5px] leading-relaxed text-faint">The baseline gives totals only; per-control statuses come from the assessments returned by POST /v1/assurance/runs. Totals reflect everything registered in this ARC process, including Phase 2 probe agents and tools.</p>
         </Section>
 
         <div className="space-y-5">

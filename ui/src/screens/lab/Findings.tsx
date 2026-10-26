@@ -4,12 +4,13 @@ import { SourceTag } from '../../components/ui/SourceTag'
 import { StatusBadge } from '../../components/ui/StatusBadge'
 import { RemediationStepper } from '../../components/lab/RemediationStepper'
 import { FindingCase } from '../../components/lab/FindingCase'
-import { useFindingStates } from '../../lib/findings'
+import { useFindingStates, useUnmappedFailures } from '../../lib/findings'
 import { usePhase2 } from '../../lib/phase2'
 import { fmtTime } from '../../lib/status'
 
 export function Findings() {
   const states = useFindingStates()
+  const unmapped = useUnmappedFailures()
   const p2 = usePhase2()
   const open = states.filter(s => s.stage !== 'resolved')
   const failing = states.filter(s => s.checkStatus === 'FAIL').length
@@ -37,12 +38,27 @@ export function Findings() {
         </div>
         <div>
           <div className="text-[12px] text-muted">Affected path</div>
-          <div className="mt-1.5 text-[13px] text-ink">Execution, after authorization succeeded</div>
+          <div className="mt-1.5 text-[13px] text-ink">Execution after authorization; agent lifecycle</div>
         </div>
       </div>
 
       <div className="grid gap-6 lg:grid-cols-[minmax(0,1fr)_320px]">
         <div className="space-y-6">
+          {unmapped.length > 0 && (
+            <section className="rounded-lg border border-critical/40 bg-critical-50 px-5 py-4">
+              <h2 className="text-[13.5px] font-semibold text-critical-ink">{unmapped.length} failing Phase 2 check{unmapped.length === 1 ? '' : 's'} not yet written up as a finding</h2>
+              <ul className="mt-2 space-y-1.5">
+                {unmapped.map(r => (
+                  <li key={r.spec.id} className="flex flex-wrap items-center gap-2 text-[12.5px]">
+                    <StatusBadge status={r.status} />
+                    <Link to={`/lab/scenarios?focus=${r.spec.id}`} className="font-mono text-ink hover:underline">{r.spec.id}</Link>
+                    <SourceTag source={r.source} at={r.at} note={r.origin} />
+                    {r.run?.error && <span className="font-mono text-[11.5px] text-muted">{r.run.error}</span>}
+                  </li>
+                ))}
+              </ul>
+            </section>
+          )}
           {states.map(s => <FindingCase key={s.finding.id} s={s} />)}
         </div>
 
