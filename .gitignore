@@ -3,3 +3,4 @@ reports/
 .env
 .env.*
 *.log
+dist/

@@ -1,6 +1,6 @@
 import { createServer } from 'node:http';
-import { readFile } from 'node:fs/promises';
-import { join, dirname } from 'node:path';
+import { readFile, readdir } from 'node:fs/promises';
+import { join, dirname, resolve as resolvePath, sep, extname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { timingSafeEqual } from 'node:crypto';
 
@@ -102,6 +102,74 @@ export function createCompany({ executionToken, getHarness, port = 8890, host = 
     }
     return json(res, 404, { error: 'unknown_fault' });
   };
+  // Saved report files written by report.mjs (`npm run validate`) and
+  // phase2-report.mjs (`npm run phase2`). Read-only, and redacted again here so
+  // no operator token, agent API key or connector token can reach the browser.
+  const SECRET_KEY = /apiKey|api_key|token|secret|authorization|password|bearer/i;
+  const redact = value => {
+    if (Array.isArray(value)) return value.map(redact);
+    if (!value || typeof value !== 'object') return value;
+    return Object.fromEntries(Object.entries(value)
+      .filter(([key]) => !SECRET_KEY.test(key))
+      .map(([key, item]) => [key, redact(item)]));
+  };
+  const reportsDir = join(root, 'reports');
+  // 'report_not_generated' is deliberately NOT 'not_found': the route exists and
+  // works, the run just has not happened yet. Callers must show an empty state,
+  // not an unsupported-capability state.
+  const serveReport = async (res, name) => {
+    let text;
+    try { text = await readFile(join(reportsDir, name), 'utf8'); }
+    catch { return json(res, 404, { error: 'report_not_generated', detail: `reports/${name} does not exist yet` }); }
+    try { return json(res, 200, redact(JSON.parse(text))); }
+    catch { return json(res, 500, { error: 'invalid_report', detail: `reports/${name} is not valid JSON` }); }
+  };
+  const reportIndex = async () => {
+    let names = [];
+    try { names = await readdir(reportsDir); } catch { /* never generated */ }
+    const files = names.filter(name => name.endsWith('.json')).sort();
+    return {
+      integration: files.includes('latest.json') ? '/api/reports/latest' : null,
+      phase2: files.includes('phase2-latest.json') ? '/api/reports/phase2' : null,
+      files
+    };
+  };
+
+  // Built validation-lab UI (ui/dist), served under /ui/ on this same origin so
+  // the browser's /api/* calls need no CORS and no second port.
+  const uiDir = join(root, 'ui', 'dist');
+  const UI_TYPES = {
+    '.html': 'text/html; charset=utf-8', '.js': 'text/javascript; charset=utf-8',
+    '.css': 'text/css; charset=utf-8', '.json': 'application/json; charset=utf-8',
+    '.map': 'application/json; charset=utf-8', '.svg': 'image/svg+xml',
+    '.png': 'image/png', '.jpg': 'image/jpeg', '.jpeg': 'image/jpeg',
+    '.webp': 'image/webp', '.ico': 'image/x-icon', '.woff': 'font/woff',
+    '.woff2': 'font/woff2', '.ttf': 'font/ttf'
+  };
+  const serveUi = async (res, path) => {
+    const relative = path.slice('/ui'.length).replace(/^\//, '') || 'index.html';
+    const file = resolvePath(uiDir, relative);
+    if (file !== uiDir && !file.startsWith(uiDir + sep)) return json(res, 403, { error: 'path_outside_ui_bundle' });
+    const type = UI_TYPES[extname(file).toLowerCase()];
+    if (!type) return json(res, 404, { error: 'not_found' });
+    let data;
+    try { data = await readFile(file); }
+    catch {
+      // Distinguish "the bundle was never built" from "that file is not in the
+      // bundle" — the first is a setup step, the second is a bad path.
+      let built = true;
+      try { await readFile(join(uiDir, 'index.html')); } catch { built = false; }
+      return built
+        ? json(res, 404, { error: 'not_found', detail: `${relative} is not in the built UI bundle` })
+        : json(res, 404, {
+            error: 'ui_not_built',
+            detail: 'ui/dist is missing. Run: npm run ui:install && npm run ui:build (or npm run ui:dev for the dev server on :5173).'
+          });
+    }
+    res.writeHead(200, { 'content-type': type, 'cache-control': 'no-store', 'x-content-type-options': 'nosniff' });
+    res.end(data);
+  };
+
   const server = createServer(async (req, res) => {
     try {
       const url = new URL(req.url || '/', `http://${host}:${port}`);
@@ -155,6 +223,10 @@ export function createCompany({ executionToken, getHarness, port = 8890, host = 
         if (Array.isArray(result)) runs.push(...result); else runs.push(result);
         return json(res, 200, result);
       }
+      if (req.method === 'GET' && path === '/api/reports') return json(res, 200, await reportIndex());
+      if (req.method === 'GET' && path === '/api/reports/latest') return serveReport(res, 'latest.json');
+      if (req.method === 'GET' && path === '/api/reports/phase2') return serveReport(res, 'phase2-latest.json');
+      if (req.method === 'GET' && (path === '/ui' || path.startsWith('/ui/'))) return serveUi(res, path);
       if (req.method !== 'GET') return json(res, 405, { error: 'method_not_allowed' });
       const assets = { '/': ['index.html', 'text/html; charset=utf-8'], '/app.js': ['app.js', 'text/javascript; charset=utf-8'], '/style.css': ['style.css', 'text/css; charset=utf-8'] };
       const asset = assets[path];

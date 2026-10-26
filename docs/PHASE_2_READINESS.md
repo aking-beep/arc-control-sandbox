@@ -1,25 +1,36 @@
 # Phase 2 readiness
 
-Measured on 26 Oct 2026 at 11:21 AM Pacific, against a local loopback process. This is not an enterprise certification.
+Latest measurement: 26 Oct 2026, against a local loopback process. This is not an enterprise certification.
 
 | Piece | Revision |
 | --- | --- |
-| Sandbox harness | `6ae25141a0c9f567a239fdd417e5d3ef3621065d` |
-| ARC Control `main` | `aa2f37c97410427338600e47c913fd6aa51aa5d3` |
-| Node | 22.23.4 |
+| Sandbox harness | `f989d4ee6a6796ac1071eb6a434d80bb2f4e7214` |
+| ARC Control | `162d00dcb89e23e4bcbb8328e0f74f63075b1a3b` (branch `claude/amazing-darwin-9bs9a6`) |
+| Node | 22.22.0 |
+
+> **This run is against a different ARC Control revision than the previous one.**
+> The earlier 31-pass/2-fail result was measured against ARC Control
+> `aa2f37c97410427338600e47c913fd6aa51aa5d3`, which is not reachable from the
+> checkout used here. `src/phase2.mjs` is byte-identical to the revision that
+> produced that earlier result — no assertion was changed, relaxed or removed.
+> The difference below is a change in ARC Control's behaviour, not in the tests.
 
 Regenerate with the stack already running: `npm run phase2`. The command writes `reports/phase2-latest.json` and exits non-zero when an implemented check or a stress preset fails. That exit code is the result, not a broken runner.
 
 ## Result
 
-The sandbox is not enterprise-ready. Thirty-one implemented checks passed, two failed, five capabilities are absent from this ARC build, and one chaos case was not run because it would destroy the shared in-memory process.
+The sandbox is not enterprise-ready. Thirty implemented checks passed, **three failed**, five capabilities are absent from this ARC build, and one chaos case was not run because it would destroy the shared in-memory process.
 
 | Class | Count | Meaning |
 | --- | --- | --- |
-| Implemented and passing | 31 | The assertion held on this process. Three of these reproduce a known limitation rather than a strong control. |
-| Implemented but failing | 2 | Concurrent idempotency, and a policy tightened while an approval was still open. |
+| Implemented and passing | 30 | The assertion held on this process. 3 of these reproduce a known limitation rather than a strong control. |
+| Implemented but failing | 3 | Concurrent idempotency; a policy tightened while an approval was still open; and retirement reversed through the activate route. |
 | Unsupported by ARC Control | 5 | No product surface exists to pass or fail. |
 | Not implemented | 1 | Restart during an open approval. |
+
+`npm run phase2` exits non-zero while any implemented check fails. That exit
+code is the result, not a broken runner, and it stays non-zero until the ARC
+Control defects below are fixed and independently retested.
 
 The original 17 integration scenarios were run again after Phase 2 and stress, on the same process: **17/17 passed**.
 
@@ -32,7 +43,7 @@ Security checks that held:
 - A wrong-role operator and the agent's own owner were refused on approval votes. Neither vote refunded anyone.
 - An agent key received HTTP 401 from policy publish, key issue, suspend, audit read, and approval vote.
 - A one-second approval window expired. Release returned `approval_expired` and the probe backend was not called.
-- Rotating a credential rejected the old key. Retire refused reactivation. A draft agent was refused before any refund.
+- Rotating a credential rejected the old key. A draft agent was refused before any refund. (Retire no longer refuses reactivation on this revision — see the third failure below.)
 - An undeclared parameter was rejected. Registering `finance.refund` again returned HTTP 409.
 - `POST /v1/mcp/scan` flagged instruction override (MCP-SEC-001), credential solicitation (MCP-SEC-002), a hidden character (MCP-SEC-006), a duplicate tool name (MCP-SEC-022), and a plaintext off-loopback endpoint (MCP-SEC-021).
 - The shipped `detectDrift` reported a changed description as MCP-SEC-030 critical and a new tool as MCP-SEC-031.
@@ -53,7 +64,28 @@ Security checks that held:
 
 **Policy changed before release.** A $1,850 refund was held, a new always-deny policy for `finance.refund` was published, the approval was voted, and release returned HTTP 200 `executed` with one refund. `resume` re-checks the kill switch and the agent status. It does not evaluate the policies that are in force at release time. It executes the decision stored when the action was submitted. A new request under that same deny policy was denied, so the engine's strictest-wins rule works for new work.
 
-Neither failure was patched in ARC Control. The assertions stay as written.
+**Retirement is reversible through the activate route.** *New on this
+revision; it passed on `aa2f37c`.* A throwaway agent was registered, issued a
+key, and retired — `retire` returned 200 with status `retired` and revoked the
+credential. `POST /v1/agents/:id/activate` then returned **HTTP 200** where the
+check requires 409, and the agent was active again.
+
+The cause is a route that misses its own guard. `AgentRegistry.activate()` does
+refuse a retired agent, and its comment says so: *"Refuses a retired agent:
+retirement is meant to be final."* But `POST /v1/agents/:id/activate` calls
+`GatewayAdmin.setAgentStatus(id, 'active')`, which dispatches to
+`AgentRegistry.resume()` — the suspend/unsuspend path, with no retirement
+check. So the only HTTP route to activation bypasses the invariant the registry
+documents, and the route's own comment ("the registry refuses to revive a
+retired agent") describes a path it does not take.
+
+`retire()` does revoke the agent's credentials, so the old key stays dead. The
+exposure is that the identity becomes active again and an operator can then
+issue a fresh key for it, which makes retirement reversible and records it as a
+status change rather than as a re-registration anyone can see.
+
+None of the three failures was patched in ARC Control. The assertions stay as
+written.
 
 ## Limitations the passing checks reproduced
 
@@ -77,7 +109,7 @@ Neither failure was patched in ARC Control. The assertions stay as written.
 
 ## Stress
 
-Presets are 100 requests at concurrency 5, 500 at 10, and 1,000 at 20. Each preset ran with seeds 1, 2, and 3. The mix is deterministic. Two of the four residues are allowed refunds, so every seed on these counts is half executed, a quarter held, and a quarter denied. The seed changes order, which is why latency moved between seeds while the effect counts did not. Percentiles use `floor(p × (n − 1))` on sorted request latencies. This is one Node process on loopback with MemoryStore. It is not a service-level objective.
+Presets are 100 requests at concurrency 5, 500 at 10, and 1,000 at 20. Each preset ran with seeds 1, 2, and 3. The table below is from the earlier run; the figures in `reports/phase2-latest.json` are the current ones. Throughput moves with the host, so treat both as shape, not as a number to hold ARC to. The mix is deterministic. Two of the four residues are allowed refunds, so every seed on these counts is half executed, a quarter held, and a quarter denied. The seed changes order, which is why latency moved between seeds while the effect counts did not. Percentiles use `floor(p × (n − 1))` on sorted request latencies. This is one Node process on loopback with MemoryStore. It is not a service-level objective.
 
 | Preset | Seed | Requests/s | p50 (ms) | p95 (ms) | p99 (ms) | Refunds | Other mutations | Unexpected outcomes |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- |
@@ -95,6 +127,9 @@ All nine runs passed their own assertions: every response matched the seeded out
 
 ## Product improvements worth making in ARC Control
 
+0. Route `POST /v1/agents/:id/activate` through `AgentRegistry.activate()` so the
+   retirement guard actually runs, and add a regression test that a retired
+   agent cannot be activated over HTTP. The guard exists; nothing reaches it.
 1. Make idempotency atomic. Two callers with the same agent, tool, and key must not both pass the replay check. The duplicate refunds above are the case to lock with a regression test.
 2. Re-evaluate current policy inside `resume` before the connector runs. A deny published while the approval is open should win, as it already does for a new request. Keep the kill-switch and agent-status checks that already run there.
 3. Treat a timeout after a possible effect as an operator reconciliation item. The failed outcome is honest. There is still no compensation, and writes correctly are not retried.
@@ -106,11 +141,14 @@ All nine runs passed their own assertions: every response matched the seeded out
 ## How to run
 
 ```bash
-npm test
-npm run preflight
-npm start
-npm run validate
-npm run phase2
+npm test                 # company boundary + stress-plan math, no servers needed
+npm run preflight        # Node version, ARC sibling build, free ports
+npm start                # the three-server stack (leave running)
+npm run validate         # the original 17 -> reports/latest.json
+npm run phase2           # Phase 2 + 9 stress runs + the 17 -> reports/phase2-latest.json
 ```
+
+`npm run phase2` currently exits 1 because three implemented checks fail. That
+is the correct current result.
 
 `npm test` covers the company boundary and the stress-plan math. `npm run validate` is only the original 17. `npm run phase2` repeats Phase 2, the nine stress runs, and the 17. The command center can run one Phase 2 check, or one stress preset with seed 1. The three-seed matrix is the report command.
