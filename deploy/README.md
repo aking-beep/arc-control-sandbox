@@ -17,7 +17,30 @@ docker compose -f deploy/docker-compose.yml up -d --build
 
 The ARC API (8787) and the lab's own port (8890) are not published.
 
-**On a server:** set `LAB_DOMAIN=lab.example.com` and `CONSOLE_DOMAIN=console.example.com` so Caddy obtains TLS certificates, and publish 80 and 443 with `TLS_BIND=0.0.0.0` (80 serves the ACME HTTP challenge and the redirect to HTTPS). With hostnames set, Caddy serves both sites on 443 only, at `https://lab.example.com` and `https://console.example.com`; the 8080/8081 ports are for the no-domain setup and can stay on loopback. For more than a handful of testers, put your SSO in front instead of basic auth: Cloudflare Access, Tailscale, or oauth2-proxy.
+## On a server (one command)
+
+1. Create an Ubuntu 22.04 or 24.04 server with at least 2 vCPU and 4 GB memory, for example Hetzner CX22 or a DigitalOcean 4 GB droplet. Note its public IPv4 address.
+2. In your domain's DNS, add two **A** records pointing at that address, for example `lab` and `console` under `arctransformationgroup.com`. Wait until they resolve (`dig +short lab.arctransformationgroup.com`).
+3. On the server:
+
+```bash
+git clone https://github.com/aking-beep/arc-control-sandbox.git
+cd arc-control-sandbox
+sudo bash deploy/server-setup.sh \
+  --domain lab.arctransformationgroup.com \
+  --console-domain console.arctransformationgroup.com
+```
+
+The script installs Docker, opens only ports 22, 80 and 443, adds swap on small servers, checks that both names point at this server (so certificate issuance is not wasted), pins ARC Control to the current `main` commit, generates the shared login, builds, starts, waits until the gateway is configured, and prints the addresses and the password once. The login is stored only as a bcrypt hash in `deploy/.env` (mode 600, ignored by git).
+
+- **Update to the latest code:** `git pull && sudo bash deploy/server-setup.sh --domain ... --console-domain ...` (the login is kept).
+- **New password:** add `--new-password`.
+- **Different ARC build:** add `--arc-ref <branch, tag or commit>`.
+- **Logs:** `docker compose -f deploy/docker-compose.yml --env-file deploy/.env logs -f`.
+
+Plain links such as `https://lab.example.com/lab/suites` redirect to the in-app address (`/#/lab/suites`), so any page can be shared directly.
+
+With hostnames set, Caddy serves both sites on 443, obtains certificates itself, and redirects port 80 to HTTPS. The 8080/8081 ports stay on loopback. For more than a handful of testers, put your SSO in front instead of basic auth: Cloudflare Access, Tailscale, or oauth2-proxy.
 
 **Behind a TLS-inspecting proxy:** the build fetches ARC from GitHub and packages from npm. Pass the proxy's CA as a build secret; it is used only during the build steps and is not stored in the image:
 
@@ -53,6 +76,7 @@ docker exec deploy-lab-1 npm run product
 
 27 Oct 2026, ARC Control `main` `8b0eb4b`, Docker 29.9 with Compose 5.6, built behind a TLS-inspecting proxy with the `extra_ca` secret:
 - `smoke.sh`: all 12 checks pass, including the gateway being configured behind the gate before anything else runs.
+- `server-setup.sh --no-tls`: comes up healthy, the printed login works (401 without it), a second run keeps the login, `deploy/.env` is mode 600 and ignored by git, and plain links such as `/lab/suites` open the right page in a browser with no console errors. The `--domain` path (DNS check, certificates) needs a real server and was not run here.
 - Harness inside the container: original 17/17; Phase 2 35 pass / 0 fail / 3 unsupported / 2 not implemented; stress pass; product 22 pass; Northwind 13 pass; 17/17 recheck; 76 routes, 0 unmapped.
 - Northwind run through the gate from the browser-facing port: 13 pass, 2 unsupported.
 - The report records both commits (`ARC_REVISION` / `SANDBOX_REVISION` are set in the image, which has no `.git`).

@@ -242,6 +242,12 @@ export function createCompany({ executionToken, getHarness, port = 8890, host = 
         const built = join(uiDir, 'index.html');
         return send(await exists(built) ? built : join(root, 'public', 'index.html'));
       }
+      // The Lab routes in the browser (/#/lab/...). A plain link such as /lab/suites
+      // redirects there, so addresses can be shared without the #.
+      if (/^\/(lab|enterprise|company|system)(\/[A-Za-z0-9_-]+)*\/?$/.test(path)) {
+        res.writeHead(302, { location: `/#${path.replace(/\/$/, '')}`, 'cache-control': 'no-store' });
+        return res.end();
+      }
       const asset = path.match(/^\/assets\/([A-Za-z0-9._-]+)$/);
       if (asset && !asset[1].startsWith('.') && await exists(join(uiDir, 'assets', asset[1]))) {
         return send(join(uiDir, 'assets', asset[1]), 'public, max-age=31536000, immutable');

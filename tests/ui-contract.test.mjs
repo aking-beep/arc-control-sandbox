@@ -89,6 +89,13 @@ test('the built UI is served at / when present, the original page stays at /clas
     assert.match(await (await fetch(url('/classic'))).text(), /app\.js/);
     assert.equal((await fetch(url('/assets/..%2F..%2Fpackage.json'))).status, 404);
     assert.equal((await fetch(url('/assets/missing.js'))).status, 404);
+    for (const [from, to] of [['/lab', '/#/lab'], ['/lab/suites', '/#/lab/suites'], ['/enterprise/finance/', '/#/enterprise/finance'], ['/system/health', '/#/system/health']]) {
+      const res = await fetch(url(from), { redirect: 'manual' });
+      assert.deepEqual([res.status, res.headers.get('location')], [302, to], from);
+    }
+    for (const path of ['/lab/../package.json', '/labx', '/api-lab', '/lab/a.b']) {
+      assert.notEqual((await fetch(url(path), { redirect: 'manual' })).status, 302, `${path} is not a Lab page`);
+    }
   } finally {
     await company.close();
   }
