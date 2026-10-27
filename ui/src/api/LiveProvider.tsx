@@ -47,7 +47,8 @@ export function LiveProvider({ children }: { children: ReactNode }) {
     try {
       const snap = await meridianApi.live()
       setSnapshot(snap)
-      setEvents(prev => prev.length ? prev : snap.events.filter(e => e.kind !== 'status'))
+      // Keep the streamed feed, unless it is empty or from an earlier day than the server's.
+      setEvents(prev => prev.length && prev[prev.length - 1].day === snap.day ? prev : snap.events.filter(e => e.kind !== 'status'))
       setError(null)
       return true
     } catch (e) {
@@ -76,7 +77,8 @@ export function LiveProvider({ children }: { children: ReactNode }) {
           if (e.kind === 'anomaly') next.anomalies = [...next.anomalies, e].slice(-50)
           return next
         })
-        if (e.kind === 'status') return
+        // New day arrives as a status event: drop the previous day's rows here too, or other tabs keep them.
+        if (e.kind === 'status') { setEvents(prev => prev.filter(x => x.day === e.day)); return }
         // A new day (from any browser, or the 24-hour rollover) starts the feed afresh.
         setEvents(prev => [...prev.filter(x => x.day === e.day), e].slice(-KEEP))
         if (e.kind === 'action' || e.kind === 'approval' || e.kind === 'inbound' || e.kind === 'anomaly') nudge()
