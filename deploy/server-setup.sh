@@ -18,7 +18,7 @@
 # script on a machine with no public name). --skip-install skips step 1.
 set -euo pipefail
 
-domain='' console='' arc_ref='main' new_password=0 tls=1 install=1 user='tester'
+domain='' console='' arc_ref='main' new_password=0 tls=1 install=1 user=''
 while [ $# -gt 0 ]; do
   case "$1" in
     --domain) domain="$2"; shift 2 ;;
@@ -87,15 +87,20 @@ echo "arc-control $arc_ref → $sha"
 say "Login"
 env_file=deploy/.env
 password=''
+stored_user="$( [ -f "$env_file" ] && grep '^LAB_USER=' "$env_file" | cut -d= -f2- || true)"
+user="${user:-${stored_user:-tester}}"
 if [ -f "$env_file" ] && [ "$new_password" = 0 ] && grep -q '^LAB_PASSWORD_HASH=' "$env_file"; then
-  echo "keeping the existing login (pass --new-password to replace it)"
+  echo "keeping the existing login for $user (pass --new-password to replace it)"
   hash_line="$(grep '^LAB_PASSWORD_HASH=' "$env_file")"
-  user="$(grep '^LAB_USER=' "$env_file" | cut -d= -f2-)"
 else
   password="$(od -An -N18 -tx1 /dev/urandom | tr -d ' \n')"
   hash="$(docker run --rm caddy:2.8 caddy hash-password --plaintext "$password")"
   # Single quotes: Compose must not expand the $ signs in a bcrypt hash.
   hash_line="LAB_PASSWORD_HASH='$hash'"
+  # Shown now, not only at the end: if a later step fails, a re-run keeps this
+  # login, and it is stored only as a hash.
+  echo "New login: user $user, password $password"
+  echo "Save it now. It is not stored anywhere in plain text."
 fi
 if [ "$tls" = 1 ]; then
   sites="LAB_DOMAIN=$domain
