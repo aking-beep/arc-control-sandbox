@@ -17,8 +17,10 @@ const base = process.env.MERIDIAN_BASE || 'http://127.0.0.1:8890';
 const arcRoot = resolve(process.env.ARC_REPO_PATH || '../arc-control');
 const quick = process.argv.includes('--quick'); // one stress seed per preset
 
-const revision = async (cwd) => {
-  try { return (await execFileAsync('git', ['rev-parse', 'HEAD'], { cwd })).stdout.trim(); } catch { return null; }
+// A container image has no .git, so the image records the refs it was built
+// from in ARC_REVISION / SANDBOX_REVISION instead.
+const revision = async (cwd, fallback) => {
+  try { return (await execFileAsync('git', ['rev-parse', 'HEAD'], { cwd })).stdout.trim(); } catch { return process.env[fallback] || null; }
 };
 const call = async (method, path, body) => {
   const response = await fetch(`${base}${path}`, { method, headers: { 'content-type': 'application/json' }, ...(body === undefined ? {} : { body: JSON.stringify(body) }) });
@@ -33,7 +35,7 @@ try {
   const health = await (await fetch(`${base}/api/health`)).json();
   if (!health.gatewayConfigured) throw new Error('Meridian is running without ARC gateway');
   const startedAt = new Date().toISOString();
-  const revisions = { sandbox: await revision(process.cwd()), arcControl: await revision(arcRoot) };
+  const revisions = { sandbox: await revision(process.cwd(), 'SANDBOX_REVISION'), arcControl: await revision(arcRoot, 'ARC_REVISION') };
 
   console.log('== Original 17 integration scenarios');
   const integration = await call('POST', '/api/scenarios/all');

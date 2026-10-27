@@ -95,7 +95,7 @@ What Northwind showed about ARC:
 
 ## CI
 
-- **This repository:** `.github/workflows/arc-integration.yml` runs on push to `main`, on pull requests, nightly at 06:17 UTC, on demand (`arc_ref` input), and on `repository_dispatch` (`arc-control-updated`). It builds ARC at the given ref (default `main`, never the default branch), then runs `npm test`, the UI build, `npm run coverage -- --strict`, the stack and `npm run product`, and uploads the reports.
+- **This repository:** `.github/workflows/arc-integration.yml` runs on push to `main`, on pull requests, nightly at 06:17 UTC, on demand (`arc_ref` input), and on `repository_dispatch` (`arc-control-updated`). It builds ARC at the given ref (default `main`, never the default branch), then runs `npm test`, the UI build, `npm run coverage -- --strict`, the stack and `npm run product`, and uploads the reports. A second job, `hosted`, builds the Docker image, brings it up behind the Caddy gate and runs `deploy/smoke.sh`.
 - **arc-control:** `.github/workflows/sandbox.yaml` (PR `claude/sandbox-harness-ci`) runs the same harness from this repository's `main` against every ARC pull request. It needs this repository's product harness on `main` first.
 
 `repository_dispatch` from arc-control to here needs a token with access to this repository, stored as an arc-control secret. It is not configured. Until it is, the nightly run and the arc-control workflow cover ARC changes.
@@ -103,7 +103,7 @@ What Northwind showed about ARC:
 ## Hosting
 
 - **Read-only showcase:** `npm run showcase` builds a static page from the last product run. It has no API calls and no controls, and is safe to host anywhere.
-- **Private test environment:** `deploy/` (see `deploy/README.md`). One container with a pinned ARC ref, behind an authenticating Caddy proxy. The ARC API is never published. `/hooks/*` is refused at the edge. The servers bind beyond loopback only with `SANDBOX_ALLOW_REMOTE_BIND=1`.
+- **Private test environment:** `deploy/` (see `deploy/README.md`). One container with a pinned ARC ref, behind an authenticating Caddy proxy. The ARC API is never published. `/hooks/*` is refused at the edge. The servers bind beyond loopback only with `SANDBOX_ALLOW_REMOTE_BIND=1`. Built and brought up on 27 Oct 2026: `deploy/smoke.sh` checks the gate (11 checks) and runs the whole harness inside the container, and the `hosted` CI job runs it on every change.
 - **Not built yet:** splitting ARC and Meridian into separate containers on separate networks. That is what makes the network-segmentation capability testable; today they share one process.
 
 ## Remaining gaps
@@ -112,5 +112,5 @@ What Northwind showed about ARC:
 2. OIDC sign-in is not exercised (`/auth/*` and `/v1/operator-sessions*` are stated gaps).
 3. Editing or resolving assurance findings is deliberately not exercised.
 4. Route coverage for the 17, Phase 2 and pack runners is per suite (read from runner source); product checks declare routes per check.
-5. The Docker image was not built in this environment (no Docker daemon). The compose file and Caddyfile are untested.
+5. The hosted environment is verified locally behind loopback (`deploy/smoke.sh`, also in CI), but TLS with a real public domain has not been exercised.
 6. Cumulative amount limits and approval delegation need ARC product work before they can be tested.

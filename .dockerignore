@@ -1,6 +1,10 @@
-node_modules
-ui/node_modules
+# Keep the build context to source: no history, installed packages, local
+# reports or secrets reach the image.
+.git
+**/node_modules
 ui/dist
 reports
-.git
+showcase
+.env
+.env.*
 *.log

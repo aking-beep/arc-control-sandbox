@@ -9,12 +9,12 @@ const execFileAsync = promisify(execFile);
 const base = process.env.MERIDIAN_BASE || 'http://127.0.0.1:8890';
 const arcRoot = process.env.ARC_REPO_PATH || '../arc-control';
 
-const revision = async (cwd) => {
+const revision = async (cwd, fallback) => {
   try {
     const { stdout } = await execFileAsync('git', ['rev-parse', 'HEAD'], { cwd });
     return stdout.trim();
   } catch {
-    return null;
+    return process.env[fallback] || null;
   }
 };
 
@@ -48,8 +48,8 @@ try {
     runner: 'arc-control-sandbox-phase2',
     disclaimer: 'Local synthetic observations. Not an enterprise certification, penetration test, or proof of production readiness.',
     revisions: {
-      sandbox: await revision(process.cwd()),
-      arcControl: await revision(arcRoot)
+      sandbox: await revision(process.cwd(), 'SANDBOX_REVISION'),
+      arcControl: await revision(arcRoot, 'ARC_REVISION')
     },
     node: process.version,
     phase2: phase2.summary,

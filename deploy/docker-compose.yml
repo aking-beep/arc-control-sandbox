@@ -10,11 +10,13 @@
 # Tailscale, oauth2-proxy) for anything beyond a small private test group.
 services:
   lab:
+    image: ${LAB_IMAGE:-arc-validation-lab:local}
     build:
       context: ..
       dockerfile: deploy/Dockerfile
       args:
         ARC_REF: ${ARC_REF:-main}
+        SANDBOX_REF: ${SANDBOX_REF:-unknown}
     restart: unless-stopped
     networks: [internal]
 
