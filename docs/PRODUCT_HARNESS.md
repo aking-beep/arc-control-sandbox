@@ -71,7 +71,7 @@ Two Phase 2 entries were static `unsupported` labels that `main` had overtaken. 
 
 ### New product finding
 
-[arc-control#17](https://github.com/aking-beep/arc-control/issues/17): one unreachable MCP connector makes `GET /health/enforcement` return 503 for the whole gateway, even when every tool on it is disabled, and there is no way to remove a connector. Used as a load-balancer probe, one vendor outage would take a healthy instance out of rotation. `product:health-enforcement-separate` asserts today's documented contract until the behaviour is decided.
+[arc-control#17](https://github.com/aking-beep/arc-control/issues/17): one unreachable MCP connector makes `GET /health/enforcement` return 503 for the whole gateway, even when every tool on it is disabled, and there is no way to remove a connector. Used as a load-balancer probe, one vendor outage would take a healthy instance out of rotation. The fix (arc-control PR for #17) counts a connector only while an enabled tool routes to it, and reports `inService` per connector. `product:health-enforcement-separate` asserts whichever contract the ARC build declares, strictly: before #17, 200 only when every connector is healthy; from #17, 200 only when every in-service connector is healthy, with `inService` recomputed from `GET /v1/tools` rather than taken from ARC. The check failed against the #17 build until it was updated, and passes against both builds now.
 
 ## Industry packs
 
