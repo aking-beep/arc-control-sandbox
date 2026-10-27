@@ -56,7 +56,7 @@ export function buildDepartments(s?: MeridianState): Record<string, Dept> {
           rows: [...st.tickets.map(t => L(t.id, { id: t.id, subject: t.subject, customer: custName(t.customerId), priority: '—', status: t.status })),
             ...IL.IL_TICKETS.map(t => I(t.id, { id: t.id, subject: t.subject, customer: custName(t.customerId), priority: t.priority, status: t.status }))] },
         { id: 'customers', label: 'Customer profiles', cols: [{ key: 'id', label: 'ID', mono: true }, { key: 'name', label: 'Customer' }, { key: 'tier', label: 'Tier' }, { key: 'region', label: 'Region' }],
-          rows: [...st.customers.map(c => L(c.id, { id: c.id, name: c.name, tier: c.tier, region: '—' })), ...IL.IL_CUSTOMERS.map(c => I(c.id, c))] },
+          rows: [...st.customers.map(c => L(c.id, { id: c.id, name: c.name, tier: c.tier, region: c.region ?? '—' })), ...IL.IL_CUSTOMERS.map(c => I(c.id, c))] },
         { id: 'escalations', label: 'Escalations', cols: [{ key: 'id', label: 'Ticket', mono: true }, { key: 'subject', label: 'Subject' }, { key: 'priority', label: 'Priority' }],
           rows: IL.IL_TICKETS.filter(t => t.status === 'escalated' || t.priority === 'P1').map(t => I(t.id, t)) },
       ],

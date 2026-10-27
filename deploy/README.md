@@ -37,6 +37,7 @@ The script installs Docker, opens only ports 22, 80 and 443, adds swap on small 
 - **New password:** add `--new-password`.
 - **Different ARC build:** add `--arc-ref <branch, tag or commit>`.
 - **Logs:** `docker compose -f deploy/docker-compose.yml --env-file deploy/.env logs -f`.
+- **Live operations** start with the stack: the agents work through a scripted, seeded day you can watch on every dashboard (see [`docs/LIVE_OPERATIONS.md`](../docs/LIVE_OPERATIONS.md)). Add `--no-live` to leave them paused, or `--live-rate 60` for a faster day.
 
 Plain links such as `https://lab.example.com/lab/suites` redirect to the in-app address (`/#/lab/suites`), so any page can be shared directly.
 
@@ -62,7 +63,9 @@ SKIP_BUILD=1 bash deploy/smoke.sh      # use an image you already built
 `smoke.sh` checks that:
 - the lab and the console refuse a missing or wrong login (401) and serve with one (200);
 - `/hooks/*` and `/internal/*` are refused at the edge (404), even with a login;
-- the ARC API and the lab's own port are not published.
+- the ARC API and the lab's own port are not published;
+- the live event stream passes the gate unbuffered, and is refused without a login;
+- live operations run with no anomaly before and after the harness.
 
 It then runs `npm run product -- --quick` inside the lab container and copies the report to `reports/product-docker.json`. CI runs it on every push and pull request (`hosted` job in `.github/workflows/arc-integration.yml`).
 
@@ -75,7 +78,8 @@ docker exec deploy-lab-1 npm run product
 ## Last verified
 
 27 Oct 2026, ARC Control `main` `8b0eb4b`, Docker 29.9 with Compose 5.6, built behind a TLS-inspecting proxy with the `extra_ca` secret:
-- `smoke.sh`: all 12 checks pass, including the gateway being configured behind the gate before anything else runs.
+- `smoke.sh`: all 12 gate checks pass, including the gateway being configured behind the gate before anything else runs.
+- With live operations on (27 Oct, ARC `main` `3781be7`): the live stream reaches the browser through the gate and is refused without a login; live operations ran 48 actions with 0 anomalies before the harness, the harness passed with them running, and they were still clean afterwards (53 actions, 0 anomalies).
 - `server-setup.sh --no-tls`: comes up healthy, the printed login works (401 without it), a second run keeps the login, `deploy/.env` is mode 600 and ignored by git, and plain links such as `/lab/suites` open the right page in a browser with no console errors. The `--domain` path (DNS check, certificates) needs a real server and was not run here.
 - Harness inside the container: original 17/17; Phase 2 35 pass / 0 fail / 3 unsupported / 2 not implemented; stress pass; product 22 pass; Northwind 13 pass; 17/17 recheck; 76 routes, 0 unmapped.
 - Northwind run through the gate from the browser-facing port: 13 pass, 2 unsupported.

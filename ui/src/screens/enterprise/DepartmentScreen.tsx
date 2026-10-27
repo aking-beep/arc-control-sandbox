@@ -9,10 +9,14 @@ import { RecordTable } from '../../components/enterprise/RecordTable'
 import { buildDepartments } from './departments'
 import { ORIGINAL } from '../../data/catalog'
 import { decisionOf, fmtTime, runStatus } from '../../lib/status'
+import { useLiveOps } from '../../api/LiveProvider'
+import { LiveFeed } from '../../components/lab/LiveFeed'
+import { LiveState } from '../../components/lab/LiveState'
 
 export function DepartmentScreen() {
   const { dept } = useParams()
   const { state, runs, running, runScenario, health, latestRunById } = useData()
+  const { events } = useLiveOps()
   const depts = useMemo(() => buildDepartments(state.data), [state.data])
   const d = dept ? depts[dept] : undefined
   const [tab, setTab] = useState<string | null>(null)
@@ -38,6 +42,12 @@ export function DepartmentScreen() {
             {active.note && <p className="border-b border-line bg-canvas/60 px-4 py-2 text-[12px] text-muted">{active.note}</p>}
             {state.status === 'loading' ? <div className="p-6 text-[13px] text-muted">Loading records…</div> : <RecordTable cols={active.cols} rows={active.rows} empty={`No ${active.label.toLowerCase()} recorded`} />}
           </div>
+
+          <Section className="mt-5" title={<span className="flex items-center gap-2">Live agent activity <LiveState compact /></span>} pad={false}
+            aside={<Link to="/lab/live" className="text-[12px] font-medium text-teal-ink hover:underline">All departments →</Link>}>
+            <LiveFeed events={events.filter(e => e.department === d.id || (d.id === 'support' && e.kind === 'inbound'))} limit={8}
+              empty={`No live activity for ${d.name} yet. Start Live Operations to watch ${d.tool.split('.')[0]}-agent work.`} />
+          </Section>
 
           <div className="mt-5 grid gap-5 md:grid-cols-2">
             <Section title={d.id === 'security' ? 'Access violations (ARC denials)' : 'Agent actions · ARC decisions'} aside={<SourceTag source="live" />} pad={false}>

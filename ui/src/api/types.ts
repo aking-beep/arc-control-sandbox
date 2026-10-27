@@ -85,7 +85,7 @@ export interface HealthResponse {
   phase2Configured?: boolean
 }
 
-export interface Customer { id: string; name: string; tier: string }
+export interface Customer { id: string; name: string; tier: string; region?: string }
 export interface Ticket { id: string; customerId: string; status: string; subject: string }
 export interface Employee { id: string; name: string; department: string; salary: number }
 export interface Order { id: string; customerId: string; total: number; status: string }
@@ -113,6 +113,70 @@ export interface MeridianState {
   quarantines: Quarantine[]
   mutationLog: MutationRecord[]
   runs: ScenarioRun[]
+  /** Set when a long live day sent only the most recent rows of a list: its full length. */
+  totals?: Partial<Record<string, number>>
+}
+
+/* ── Live operations (src/live/engine.mjs) ─────────────────────────── */
+
+export type LiveOutcome = 'executed' | 'pending_approval' | 'denied' | 'refused' | 'unknown'
+export type LiveDepartment = 'finance' | 'support' | 'it' | 'sales' | 'hr' | 'security' | 'northwind'
+
+export interface LiveEvent {
+  seq: number
+  at: string
+  day: number
+  tick: number
+  kind: 'action' | 'approval' | 'inbound' | 'story' | 'anomaly' | 'status' | 'error'
+  department?: LiveDepartment
+  agent?: string
+  tool?: string
+  summary?: string
+  story?: string | null
+  parameters?: Record<string, unknown>
+  expected?: string
+  actual?: string
+  httpStatus?: number
+  decision?: string | null
+  policyId?: string | null
+  ruleId?: string | null
+  reason?: string | null
+  error?: string | null
+  effects?: { expected: number | null; observed: number }
+  evidenceId?: string | null
+  approvalId?: string | null
+  correlationId?: string
+  approvers?: string[]
+  human?: boolean
+  counts?: LiveCounts
+  /** true: matched expectation · false: anomaly · null: outcome unknown */
+  ok: boolean | null
+  why?: string
+  status?: LiveStatus
+}
+
+export interface LiveCounts {
+  actions: number; executed: number; pending_approval: number; denied: number; refused: number; unknown: number
+  approved: number; rejected: number; left_pending: number; human: number; inbound: number; anomalies: number
+}
+
+export interface LiveStatus {
+  running: boolean
+  seed: number
+  rate: number
+  day: number
+  tick: number
+  startedAt: string | null
+  dayStartedAt: string | null
+  heldForTests: boolean
+  counts?: LiveCounts
+}
+
+export interface LiveSnapshot extends LiveStatus {
+  counts: LiveCounts
+  pendingApprovals: Array<{ approvalId: string; tool: string; agent: string; department: LiveDepartment; summary: string; decision: string; dueTick: number }>
+  anomalies: LiveEvent[]
+  events: LiveEvent[]
 }
 
 /** POST /api/load body. Runner clamps count to 1..1000 and concurrency to 1..25. */

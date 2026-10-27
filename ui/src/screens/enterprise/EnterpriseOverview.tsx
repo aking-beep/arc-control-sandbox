@@ -6,14 +6,20 @@ import { SourceTag } from '../../components/ui/SourceTag'
 import { buildDepartments } from './departments'
 import { POLICIES } from '../../data/registry'
 import { fmtTime } from '../../lib/status'
+import { useLiveOps } from '../../api/LiveProvider'
+import { LiveFeed } from '../../components/lab/LiveFeed'
+import { LiveState } from '../../components/lab/LiveState'
 
 export function EnterpriseOverview() {
   const { state } = useData()
+  const { events } = useLiveOps()
   const s = state.data
+  // A long live day sends only recent rows; totals carry the full counts.
+  const total = (key: keyof NonNullable<typeof s>, rows?: unknown[]) => s?.totals?.[key as string] ?? rows?.length ?? 0
   const depts = Object.values(buildDepartments(s))
   const counts: Record<string, number> = {
-    finance: s?.refunds.length ?? 0, support: s?.tickets.length ?? 0, sales: s?.exports.length ?? 0,
-    hr: s?.employees.length ?? 0, it: s?.deployments.length ?? 0, security: s?.quarantines.length ?? 0,
+    finance: total('refunds', s?.refunds), support: total('tickets', s?.tickets), sales: total('exports', s?.exports),
+    hr: total('employees', s?.employees), it: total('deployments', s?.deployments), security: total('quarantines', s?.quarantines),
   }
   const unit: Record<string, string> = { finance: 'refunds', support: 'tickets', sales: 'exports', hr: 'employees on record', it: 'deployments', security: 'quarantines' }
 
@@ -22,6 +28,11 @@ export function EnterpriseOverview() {
       <PageHeader title="Enterprise Overview"
         description="Meridian Commerce Group’s internal operations. Six departments, each with one AI agent governed by an ARC policy. Business data is fictional and resettable."
         meta={<SourceTag source={state.status === 'live' ? 'live' : 'illustrative'} at={state.fetchedAt} note={state.status === 'live' ? undefined : 'Meridian unreachable — live counts unavailable'} />} />
+
+      <Section className="mb-5" title={<span className="flex items-center gap-2">Agents at work <LiveState compact /></span>} pad={false}
+        aside={<Link to="/lab/live" className="text-[12px] font-medium text-teal-ink hover:underline">Live Operations →</Link>}>
+        <LiveFeed events={events} limit={8} empty="Live operations are not running. Start them from Live Operations to watch the agents work." />
+      </Section>
 
       <div className="grid gap-5 lg:grid-cols-[minmax(0,1.5fr)_minmax(0,1fr)]">
         <Section title="Departments" pad={false}>

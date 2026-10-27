@@ -1,7 +1,7 @@
 import type {
   AssuranceResult, EvidenceResponse, HealthResponse, IntegrationReport, LoadRequest, LoadResult, MeridianState,
   Phase2Report, Phase2Response, Phase2Run, Phase2Summary, Resource, SavedReport, ScenarioRun, ScenariosResponse,
-  StressPreset, StressResult, SuiteSummary, SuiteResponse, SuiteRun, CoverageReport, ProductReport
+  StressPreset, StressResult, SuiteSummary, SuiteResponse, SuiteRun, CoverageReport, ProductReport, LiveSnapshot
 } from './types'
 
 /**
@@ -84,6 +84,12 @@ export const meridianApi = {
   suite: (id: string) => call<SuiteResponse>(`/api/suites/${encodeURIComponent(id)}`),
   runSuite: (id: string, check: string) => call<SuiteRun | SuiteRun[]>(`/api/suites/${encodeURIComponent(id)}/${encodeURIComponent(check)}`, { method: 'POST', body: '{}' }),
   coverage: () => call<CoverageReport>('/api/coverage'),
+  live: () => call<LiveSnapshot>('/api/live'),
+  liveStart: (body: { seed?: number; rate?: number } = {}) => call<LiveSnapshot>('/api/live/start', { method: 'POST', body: JSON.stringify(body) }),
+  livePause: () => call<LiveSnapshot>('/api/live/pause', { method: 'POST', body: '{}' }),
+  liveNewDay: (seed?: number) => call<LiveSnapshot>('/api/live/new-day', { method: 'POST', body: JSON.stringify(seed === undefined ? {} : { seed }) }),
+  /** Server-sent events: a snapshot, then every live event as it happens. */
+  liveStreamUrl: () => `${getApiBase()}/api/live/stream`,
   productReport: () => call<SavedReport<ProductReport>>('/api/reports/product'),
   /** A saved report file; `report` is null when the runner has not written one yet. */
   savedReport: <K extends 'integration' | 'phase2'>(kind: K) =>
@@ -110,6 +116,8 @@ export const SERVED_ROUTES: Array<{ route: string; purpose: string; source: stri
   { route: 'GET /api/suites, GET|POST /api/suites/:id/:check|all', purpose: 'Product-surface suite and industry packs (Northwind Bank)', source: 'product.mjs, packs/runner.mjs → ARC' },
   { route: 'GET /api/coverage', purpose: 'Every ARC route and capability, and which check exercises it', source: 'coverage.mjs (reads ARC source)' },
   { route: 'POST /hooks/arc', purpose: 'Sink for ARC webhook notifications, so delivery and signatures can be verified', source: 'company.mjs' },
+  { route: 'GET /api/live, GET /api/live/stream', purpose: 'Live operations: status, counts, anomalies, and a stream of every agent action as it happens', source: 'live/engine.mjs' },
+  { route: 'POST /api/live/start | pause | new-day', purpose: 'Run, pause or restart the scripted working day (seed, actions per minute)', source: 'live/engine.mjs → ARC /v1/actions, /v1/approvals' },
   { route: 'GET /api/arc/evidence/:id', purpose: 'One ARC evidence record, fetched with the server-held operator token and redacted', source: 'ARC GET /v1/evidence/:id' },
 ]
 

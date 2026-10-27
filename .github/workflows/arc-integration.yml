@@ -68,11 +68,15 @@ jobs:
         working-directory: arc-control-sandbox
         run: npm run coverage -- --strict
 
-      - name: Start the integrated stack
+      # Live operations run throughout, so every harness run also proves that
+      # test runs pause live traffic and still pass exactly as on a quiet stack.
+      - name: Start the integrated stack with live operations
         working-directory: arc-control-sandbox
+        env:
+          LIVE_RATE: '120'
         run: |
           npm run preflight
-          nohup npm start > stack.log 2>&1 &
+          nohup npm run live > stack.log 2>&1 &
           for i in $(seq 1 30); do
             if curl -fs http://127.0.0.1:8890/api/health | grep -q '"gatewayConfigured":true'; then exit 0; fi
             sleep 1
@@ -80,9 +84,19 @@ jobs:
           cat stack.log
           exit 1
 
+      - name: Live operations run on their own first
+        working-directory: arc-control-sandbox
+        run: |
+          sleep 30
+          npm run live:check -- --min 30
+
       - name: Whole-product run
         working-directory: arc-control-sandbox
         run: npm run product
+
+      - name: Live operations recorded no anomaly
+        working-directory: arc-control-sandbox
+        run: npm run live:check -- --min 40
 
       - name: Job summary
         if: always()
