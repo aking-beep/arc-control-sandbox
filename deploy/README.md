@@ -17,7 +17,7 @@ docker compose -f deploy/docker-compose.yml up -d --build
 
 The ARC API (8787) is not published.
 
-**On a server:** set `LAB_DOMAIN=lab.example.com` and `CONSOLE_DOMAIN=console.example.com` so Caddy obtains TLS certificates, and bind the ports publicly with `LAB_BIND=0.0.0.0 TLS_BIND=0.0.0.0`. For more than a handful of testers, put your SSO in front instead of basic auth: Cloudflare Access, Tailscale, or oauth2-proxy.
+**On a server:** set `LAB_DOMAIN=lab.example.com` and `CONSOLE_DOMAIN=console.example.com` so Caddy obtains TLS certificates, and publish 80 and 443 with `TLS_BIND=0.0.0.0` (80 serves the ACME HTTP challenge and the redirect to HTTPS). With hostnames set, Caddy serves both sites on 443 only, at `https://lab.example.com` and `https://console.example.com`; the 8080/8081 ports are for the no-domain setup and can stay on loopback. For more than a handful of testers, put your SSO in front instead of basic auth: Cloudflare Access, Tailscale, or oauth2-proxy.
 
 **Running the suites:** open **Suites & Industry Packs**, or exec into the container:
 

@@ -53,6 +53,18 @@ test('suite routes need the harness, run through it, and keep the runs', async (
   } finally { await company.close(); }
 });
 
+test('runs of different suites never overlap on the shared ARC process', async () => {
+  let active = 0, overlapped = false;
+  const slow = id => ({ id, name: id, kind: 'pack', list: () => [{ id: 'a', label: 'A', kind: 'implemented' }],
+    run: async check => { active += 1; overlapped ||= active > 1; await new Promise(r => setTimeout(r, 30)); active -= 1; return { id: check, status: 'pass', pass: true }; },
+    all: async () => [] });
+  const { company, url } = await serve({ getHarness: () => ({ suites: { one: slow('one'), two: slow('two') } }) });
+  try {
+    await Promise.all([fetch(url('/api/suites/one/a'), { method: 'POST' }), fetch(url('/api/suites/two/a'), { method: 'POST' })]);
+    assert.equal(overlapped, false);
+  } finally { await company.close(); }
+});
+
 test('the webhook sink keeps the raw body and signature for verification', async () => {
   const { company, url } = await serve({});
   try {

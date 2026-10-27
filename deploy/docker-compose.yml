@@ -30,6 +30,7 @@ services:
     ports:
       - "${LAB_BIND:-127.0.0.1}:8080:8080"
       - "${LAB_BIND:-127.0.0.1}:8081:8081"
+      - "${TLS_BIND:-127.0.0.1}:80:80"
       - "${TLS_BIND:-127.0.0.1}:443:443"
     volumes:
       - ./Caddyfile:/etc/caddy/Caddyfile:ro

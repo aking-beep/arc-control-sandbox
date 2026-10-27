@@ -28,6 +28,10 @@ export function createCompany({ executionToken, getHarness, port = 8890, host = 
   const runs = [];
   const phase2Runs = [];
   const suiteRuns = {};
+  // Suites share one ARC process, and some checks change global state (the
+  // connector kill switch, policy versions), so suite runs never overlap.
+  let suiteQueue = Promise.resolve();
+  const serialised = task => { const next = suiteQueue.then(task, task); suiteQueue = next.catch(() => {}); return next; };
   // ARC notification deliveries received at /hooks/arc, kept raw so a check can verify the signature.
   const hooks = [];
   const equal = (a, b) => {
@@ -209,7 +213,7 @@ export function createCompany({ executionToken, getHarness, port = 8890, host = 
         if (!suite) return json(res, getHarness() ? 404 : 503, { error: getHarness() ? 'unknown_suite' : 'ARC Control not initialized' });
         if (req.method === 'GET' && !checkId) return json(res, 200, { id: suite.id, name: suite.name, kind: suite.kind, scenarios: suite.list(), runs: (suiteRuns[suiteId] || []).slice(-100) });
         if (req.method === 'POST' && checkId) {
-          const result = checkId === 'all' ? await suite.all() : await suite.run(checkId);
+          const result = await serialised(() => checkId === 'all' ? suite.all() : suite.run(checkId));
           (suiteRuns[suiteId] ||= []).push(...(Array.isArray(result) ? result : [result]));
           return json(res, 200, result);
         }

@@ -178,6 +178,7 @@ export function createPackRunner({ pack, catalogue, company, seeded, apiBase, op
       const executed = responses.filter(r => r.body?.outcome === 'executed').length;
       const effects = count(PAY) - before;
       must(effects <= VELOCITY.maxIrreversibleActions, `a concurrent burst of ${burst} produced ${effects} payments; limit is ${VELOCITY.maxIrreversibleActions}`);
+      must(executed === VELOCITY.maxIrreversibleActions, `a concurrent burst of ${burst} in a fresh window executed ${executed}; expected exactly ${VELOCITY.maxIrreversibleActions}`);
       must(effects === executed, `${executed} executed responses but ${effects} backend payments`);
       return { burst, limit: VELOCITY.maxIrreversibleActions, executed, backendEffects: effects, refused: responses.filter(r => code(r) === 'rate_limited').length };
     }
