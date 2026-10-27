@@ -73,6 +73,8 @@ Scenario observations now also carry `correlationId`: the id the runner already 
 - Run buttons are enabled only when Meridian is reachable **and** reports `gatewayConfigured: true` (Phase 2 also needs `phase2Configured`).
 - The browser never calls ARC and holds no credential. `tests/ui-contract.test.mjs` fails if UI source sets the connector header, sends a bearer token, calls `/v1/` or `:8787`, or reads server secrets.
 
+> **Correction (27 Oct 2026).** The results in this section were measured against `162d00d`, `arc-control`'s GitHub default branch, which is older than `main`. On `main` `887dd2f` all three findings are fixed and Phase 2 has no failures. Current results, corrections and the whole-product harness are in [`PRODUCT_HARNESS.md`](PRODUCT_HARNESS.md). This section is kept as the record of that run.
+
 ## Measured results — 26 Oct 2026
 
 | Piece | Revision |

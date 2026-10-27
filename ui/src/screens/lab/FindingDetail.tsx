@@ -6,7 +6,7 @@ import { RemediationStepper } from '../../components/lab/RemediationStepper'
 import { RevalidationTimeline } from '../../components/lab/RevalidationTimeline'
 import { FanOutTable } from '../../components/lab/FindingAnatomy'
 import { POLICIES } from '../../data/registry'
-import { STAGE_LABEL, useFindingState } from '../../lib/findings'
+import { stageText, useFindingState } from '../../lib/findings'
 import { fmtTime } from '../../lib/status'
 
 export function FindingDetail() {
@@ -23,7 +23,7 @@ export function FindingDetail() {
         description={f.summary}
         meta={<>
           <span className="rounded bg-critical px-1.5 py-px text-[10.5px] font-semibold uppercase text-white">{f.severity}</span>
-          <span className={`text-[12px] font-medium ${st.stage === 'open' ? 'text-critical-ink' : 'text-warning-ink'}`}>{STAGE_LABEL[st.stage]}</span>
+          <span className={`text-[12px] font-medium ${stageText(st).tone}`}>{stageText(st).label}</span>
           <SourceTag source={st.source} at={st.at} note={st.sourceNote} />
         </>}
       />
@@ -82,7 +82,7 @@ export function FindingDetail() {
               <StatusBadge status={st.checkStatus} size="md" />
               <div className="text-[13px] leading-relaxed text-muted">
                 <Link to={`/lab/scenarios?focus=${f.check}`} className="font-mono text-teal-ink hover:underline">{f.check}</Link> in phase2.mjs.{' '}
-                {st.checkStatus === 'PASS' ? 'Passing. The finding stays listed until the ARC Control fix is independently retested.' : st.checkStatus === 'FAIL' ? 'Failing. The assertion is unchanged; it will pass only when ARC Control behaves correctly.' : 'No conclusive result on this server.'}
+                {st.regressed ? 'Failing again after a recorded fix: this is a regression.' : st.checkStatus === 'PASS' ? (f.resolution ? `Passing. Fixed in ${f.resolution.fixedIn} (${f.resolution.fixedBy}) and independently retested.` : 'Passing. The finding stays open until a fix is recorded and independently retested.') : st.checkStatus === 'FAIL' ? 'Failing. The assertion is unchanged; it will pass only when ARC Control behaves correctly.' : 'No conclusive result on this server.'}
                 {st.error && <div className="mt-1.5 font-mono text-[12px] text-ink">{st.error}</div>}
               </div>
             </div>
@@ -94,7 +94,7 @@ export function FindingDetail() {
 
         <div className="space-y-5">
           <Section title="Remediation"><RemediationStepper stage={st.stage} />
-            <p className="mt-3 text-[12px] leading-relaxed text-muted">“Check passing” is the furthest this UI goes. “Resolved” needs an independent retest of the ARC fix. Remediation belongs in aking-beep/arc-control; this lab does not modify ARC.</p>
+            <p className="mt-3 text-[12px] leading-relaxed text-muted">“Resolved” needs a recorded fix and an independent retest, and the reproducing check must still pass; a later failure shows it as a regression. Remediation belongs in aking-beep/arc-control.</p>
           </Section>
           <Section title="Details">
             <dl>

@@ -1,7 +1,7 @@
 import { Link } from 'react-router-dom'
 import { findingTraceFor } from '../../data/findingTraces'
 import { ADJACENT_CHECKS } from '../../data/paths'
-import { STAGE_LABEL, type FindingState } from '../../lib/findings'
+import { stageText, type FindingState } from '../../lib/findings'
 import { usePhase2 } from '../../lib/phase2'
 import { fmtTime } from '../../lib/status'
 import { StatusBadge } from '../ui/StatusBadge'
@@ -15,7 +15,7 @@ export function FindingCase({ s }: { key?: string; s: FindingState }) {
   const p2 = usePhase2()
   const adjacent = (ADJACENT_CHECKS[f.id] ?? []).map(id => p2.resolve(id)).filter(Boolean)
   const numeric = s.observedLabel.length <= 3 && f.expected.value.length <= 3
-  const open = s.stage !== 'resolved'
+  const stage = stageText(s)
 
   return (
     <article className="rounded-lg border border-line bg-surface">
@@ -23,7 +23,7 @@ export function FindingCase({ s }: { key?: string; s: FindingState }) {
         <span className="rounded bg-critical px-1.5 py-px text-[10.5px] font-semibold uppercase text-white">{f.severity}</span>
         <Link to={`/lab/findings/${f.id}`} className="font-mono text-[12.5px] font-medium text-ink hover:underline">{f.id}</Link>
         <span className="text-[14px] font-semibold text-ink">{f.title}</span>
-        <span className={`ml-auto text-[12px] font-medium ${s.stage === 'open' ? 'text-critical-ink' : 'text-warning-ink'}`}>{open && STAGE_LABEL[s.stage]}</span>
+        <span className={`ml-auto text-[12px] font-medium ${stage.tone}`}>{stage.label}</span>
       </header>
 
       <div className="grid gap-6 px-5 py-5 md:grid-cols-[220px_minmax(0,1fr)]">
@@ -44,7 +44,7 @@ export function FindingCase({ s }: { key?: string; s: FindingState }) {
               <dd className="mt-0.5 text-[13px] leading-relaxed text-ink">{t.expectedBehaviour}</dd>
             </div>
             <div>
-              <dt className="text-[11.5px] font-medium text-critical-ink">ARC did</dt>
+              <dt className="text-[11.5px] font-medium text-critical-ink">{f.resolution && !s.regressed ? 'ARC did, before the fix' : 'ARC did'}</dt>
               <dd className="mt-0.5 text-[13px] leading-relaxed text-ink">{t.observedBehaviour}</dd>
             </div>
           </dl>
@@ -58,8 +58,15 @@ export function FindingCase({ s }: { key?: string; s: FindingState }) {
         <dd className="flex flex-wrap items-center gap-2">
           <StatusBadge status={s.checkStatus} />
           <Link to={`/lab/scenarios?focus=${f.check}`} className="font-mono text-teal-ink hover:underline">{f.check}</Link>
-          <span className="text-muted">{s.at ? `· ${fmtTime(s.at)}` : ''} {s.checkStatus === 'PASS' ? '· A pass does not close the finding until the ARC fix is independently retested.' : ''}</span>
+          <span className="text-muted">{s.at ? `· ${fmtTime(s.at)}` : ''} {s.regressed ? '· Was resolved; this failure reopens it.' : s.checkStatus === 'PASS' && !f.resolution ? '· A pass alone does not close the finding; it needs a recorded fix and an independent retest.' : ''}</span>
         </dd>
+        {f.resolution && <>
+          <dt className="text-muted">Resolution</dt>
+          <dd className="text-ink">Fixed in <span className="font-mono text-[12px]">{f.resolution.fixedIn}</span> by <span className="font-mono text-[12px]">{f.resolution.fixedBy}</span>.
+            <ul className="mt-1 list-disc pl-4 text-[12px] text-muted">{f.resolution.retests.map(r => <li key={r}>{r}</li>)}</ul>
+            {f.resolution.note && <div className="mt-1 text-[12px] text-muted">{f.resolution.note}</div>}
+          </dd>
+        </>}
         {s.error && <><dt className="text-muted">Runner error</dt><dd className="font-mono text-[11.5px] text-ink">{s.error}</dd></>}
         <dt className="text-muted">Same path</dt>
         <dd className="flex flex-wrap gap-x-4 gap-y-1">

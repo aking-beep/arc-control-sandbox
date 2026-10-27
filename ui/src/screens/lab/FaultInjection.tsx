@@ -39,7 +39,7 @@ const CATEGORIES: Array<{ name: string; experiments: Array<{ label: string; avai
   ] },
   { name: 'MCP security', experiments: [
     { label: 'Manifest drift detected', avail: { kind: 'phase2', id: 'mcp-manifest-drift' } },
-    { label: 'Manifest drift blocks the tool', avail: { kind: 'unsupported', reason: 'Gateway does not pin manifests or suspend on drift (mcp-drift-runtime-enforcement)' } },
+    { label: 'Manifest drift blocks the tool', avail: { kind: 'phase2', id: 'mcp-drift-runtime-enforcement' } },
     { label: 'Tool poisoning', avail: { kind: 'phase2', id: 'mcp-poisoned-metadata' } },
     { label: 'Renamed tool or changed schema', avail: { kind: 'not_implemented', ref: 'MASTER_BUILD_PLAN 24' } },
   ] },

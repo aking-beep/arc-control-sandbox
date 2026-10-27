@@ -1,7 +1,7 @@
 import {
   Activity, BarChart3, Boxes, Briefcase, Building2, ClipboardCheck, FileSearch, FileText, Gauge, GitBranch,
   Globe, HeartPulse, Headphones, Landmark, LayoutDashboard, Plug, Scale, Settings, ShieldAlert, ShieldCheck,
-  Siren, FlaskConical, Users, Zap, Bot, Palette, type LucideIcon
+  Siren, FlaskConical, Users, Zap, Bot, Palette, Layers, Map, type LucideIcon
 } from 'lucide-react'
 
 export interface NavItem { to: string; label: string; icon: LucideIcon; keywords?: string }
@@ -22,6 +22,8 @@ export const NAV: NavGroup[] = [
     { to: '/lab', label: 'Command Center', icon: LayoutDashboard },
     { to: '/lab/agents', label: 'AI Agent Operations', icon: Bot },
     { to: '/lab/scenarios', label: 'Scenario Lab', icon: FlaskConical },
+    { to: '/lab/suites', label: 'Suites & Industry Packs', icon: Layers, keywords: 'northwind bank product surface financial services' },
+    { to: '/lab/coverage', label: 'Product Coverage', icon: Map, keywords: 'routes capabilities gaps unmapped' },
     { to: '/lab/findings', label: 'Security Findings', icon: ShieldAlert, keywords: 'ARC-SEC-001 ARC-SEC-002 ARC-SEC-003 vulnerability' },
     { to: '/lab/stress', label: 'Stress Lab', icon: Gauge, keywords: 'load performance' },
     { to: '/lab/faults', label: 'Fault Injection', icon: Zap, keywords: 'chaos' },

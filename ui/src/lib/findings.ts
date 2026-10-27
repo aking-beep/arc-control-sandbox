@@ -17,21 +17,24 @@ export interface FindingState {
   observedEffects: number | null
   observedLabel: string
   check?: Phase2Resolved
+  /** A resolved finding whose check fails again. */
+  regressed?: boolean
 }
 
 function stateOf(f: Finding, check: Phase2Resolved | undefined): FindingState {
   const result = check && (check.status === 'PASS' || check.status === 'FAIL' || check.status === 'ERROR') ? check : undefined
   if (!result) {
-    // Nothing newer than the committed measurement: keep the finding open on that basis.
+    // Nothing newer than the committed measurement: report on that basis.
+    const fixed = !!f.resolution
     return {
-      finding: f, stage: 'open', checkStatus: check?.status === 'RUNNING' ? 'RUNNING' : 'FAIL', source: 'baseline', sourceNote: BASELINE_NOTE,
+      finding: f, stage: fixed ? 'resolved' : 'open', checkStatus: check?.status === 'RUNNING' ? 'RUNNING' : fixed ? 'PASS' : 'FAIL', source: 'baseline', sourceNote: BASELINE_NOTE,
       observedEffects: f.baselineActual.effects, observedLabel: f.baselineActual.value, check,
     }
   }
   const sourceNote = result.source === 'recorded' ? `${result.origin ?? 'saved report'}` : 'Run on the current Meridian server'
   if (result.status === 'PASS') {
     return {
-      finding: f, stage: 'regression_passing', checkStatus: 'PASS', source: result.source, sourceNote, at: result.at,
+      finding: f, stage: f.resolution ? 'resolved' : 'regression_passing', checkStatus: 'PASS', source: result.source, sourceNote, at: result.at,
       observedEffects: f.expectedEffects, observedLabel: f.expected.value, check: result,
     }
   }
@@ -41,13 +44,15 @@ function stateOf(f: Finding, check: Phase2Resolved | undefined): FindingState {
     observedEffects: seen?.effects ?? null,
     observedLabel: result.status === 'ERROR' ? 'Unknown — check errored' : seen?.label ?? 'See runner error',
     check: result,
+    regressed: result.status === 'FAIL' && !!f.resolution,
   }
 }
 
 /**
- * Findings never close from this UI. A passing check moves a finding to
- * "regression passing" and it stays listed until the ARC fix is independently
- * retested and the finding is removed from data/baseline.ts on purpose.
+ * Findings never close from this UI alone. `resolved` comes from a recorded fix
+ * plus independent retests in data/baseline.ts, and still needs the reproducing
+ * check to pass; if it fails, the finding is shown as a regression. Resolved
+ * findings stay listed.
  */
 export function useFindingStates(): FindingState[] {
   const p2 = usePhase2()
@@ -68,6 +73,14 @@ export function useUnmappedFailures(): Phase2Resolved[] {
     const mapped = new Set(FINDINGS.map(f => f.check))
     return p2.all.filter(r => (r.status === 'FAIL' || r.status === 'ERROR') && !mapped.has(r.spec.id))
   }, [p2])
+}
+
+/** Header label and colour for a finding, with regressions called out. */
+export function stageText(s: FindingState): { label: string; tone: string } {
+  if (s.regressed) return { label: 'Regressed', tone: 'text-critical-ink' }
+  if (s.stage === 'resolved') return { label: 'Resolved', tone: 'text-success' }
+  if (s.stage === 'open') return { label: 'Open', tone: 'text-critical-ink' }
+  return { label: STAGE_LABEL[s.stage], tone: 'text-warning-ink' }
 }
 
 export const STAGE_LABEL: Record<FindingStage, string> = {

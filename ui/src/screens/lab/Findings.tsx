@@ -19,7 +19,7 @@ export function Findings() {
     <>
       <PageHeader
         title="Security Findings"
-        description="Authorization failures the lab has observed, each tied to the Phase 2 check that reproduces it. A finding stays listed until the ARC Control fix is independently retested; a passing check alone does not close it."
+        description="Authorization failures the lab has observed, each tied to the Phase 2 check that reproduces it. A finding is resolved only with a recorded fix and an independent retest, and it stays listed: if its check fails again it is shown as a regression."
         meta={<span className="flex flex-wrap items-center gap-2">{Array.from(new Set(states.map(s => s.source))).map(src => <SourceTag key={src} source={src} />)}</span>}
       />
 

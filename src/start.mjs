@@ -5,6 +5,10 @@ import { access } from 'node:fs/promises';
 import { createCompany } from './company.mjs';
 import { createScenarios } from './scenarios.mjs';
 import { createPhase2 } from './phase2.mjs';
+import { createProduct } from './product.mjs';
+import { northwind, NORTHWIND_SCENARIOS } from './packs/northwind.mjs';
+import { createPackRunner } from './packs/runner.mjs';
+import { buildCoverage } from './coverage.mjs';
 
 // ARC remains a sibling checkout, independently versioned. This harness uses
 // its public exported packages; no changes to arc-control source are required.
@@ -17,12 +21,31 @@ const arcImport = async p => {
 const port = Number(process.env.MERIDIAN_PORT || 8890);
 const apiPort = Number(process.env.ARC_SANDBOX_API_PORT || 8787);
 const consolePort = Number(process.env.ARC_SANDBOX_CONSOLE_PORT || 8788);
-const host = '127.0.0.1'; // LOCAL SANDBOX ONLY, never public
+const host = '127.0.0.1'; // connector targets and internal calls always use loopback
+// Interface the three servers listen on. Loopback unless a container explicitly
+// opts in; the operator routes have no authentication, so anything else must sit
+// behind an authenticating proxy (see deploy/).
+const bindHost = process.env.SANDBOX_BIND_HOST || '127.0.0.1';
+if (bindHost !== '127.0.0.1' && process.env.SANDBOX_ALLOW_REMOTE_BIND !== '1') {
+  console.error(`Refusing to bind ${bindHost}: set SANDBOX_ALLOW_REMOTE_BIND=1 only behind an authenticating proxy.`);
+  process.exit(1);
+}
+const packs = [northwind];
 const operatorToken = process.env.ARC_OPERATOR_TOKEN || randomBytes(32).toString('hex');
 const executionToken = process.env.MERIDIAN_EXECUTION_TOKEN || randomBytes(32).toString('hex');
+// Signs ARC's webhook notifications; the product suite verifies the signature.
+const webhookSigningSecret = process.env.ARC_WEBHOOK_SIGNING_SECRET || randomBytes(32).toString('hex');
+// ARC 2.1 identity-aware proxy mode. Only the Phase 2 runner holds the secret.
+// Configuring it turns the shared token off unless allowSharedToken is set,
+// which the sandbox does; those calls are recorded as `claimed`.
+const trustedProxy = {
+  identityHeader: 'x-forwarded-email', rolesHeader: 'x-forwarded-groups', secretHeader: 'x-arc-proxy-secret',
+  sharedSecret: process.env.ARC_TRUSTED_PROXY_SECRET || randomBytes(32).toString('hex'),
+  roleMap: { 'meridian-finance-managers': ['finance-manager'], 'northwind-treasury': ['treasury-manager'] }
+};
 const actor = { identifier: 'meridian-seed', via: 'seed' };
 let harness;
-const company = createCompany({ executionToken, port, host, getHarness: () => harness });
+const company = createCompany({ executionToken, port, host: bindHost, getHarness: () => harness, packs });
 
 const defs = [
   { name: 'finance.refund', effect: 'irreversible', tier: 'critical', params: [['customer', 'string'], ['amount', 'number']] },
@@ -65,7 +88,8 @@ try {
     arcImport('connectors/generic-http/dist/index.js')
   ]);
   await company.listen();
-  const arc = createControlApi({ store: new MemoryStore(), operatorToken, demoSeed: false, defaultEnvironment: 'sandbox' });
+  const rateLimit = { byAgent: Object.assign({}, ...packs.map(pack => pack.rateLimit?.byAgent || {})) };
+  const arc = createControlApi({ store: new MemoryStore(), operatorToken, demoSeed: false, defaultEnvironment: 'sandbox', rateLimit, trustedProxy, allowSharedToken: true, webhookSigningSecret });
   arc.gateway.addConnector(new GenericHttpConnector({
     name: 'meridian-http', allowedHosts: ['127.0.0.1'],
     headers: { 'x-meridian-connector-token': executionToken }, timeoutMs: 5000
@@ -90,16 +114,36 @@ try {
     const { apiKey } = await arc.gateway.admin.issueKey(reg.id, actor);
     seeded[name] = { id: reg.id, apiKey };
   }
+  for (const pack of packs) {
+    for (const d of pack.tools) {
+      seeded[d.name] = await arc.gateway.admin.registerTool({
+        name: d.name, description: `${pack.name} synthetic ${d.name} operation`,
+        system: pack.id, effect: d.effect, riskTier: d.tier,
+        connector: 'meridian-http', connectorConfig: { url: `http://${host}:${port}/internal/${d.name.replaceAll('.', '/')}`, method: 'POST' },
+        parameters: d.params.map(([name, type]) => ({ name, type, required: true })), labels: { environment: 'synthetic', pack: pack.id }
+      }, actor);
+    }
+    for (const p of pack.policies) await arc.gateway.admin.publishPolicy(p, actor);
+    for (const agent of pack.agents) {
+      const reg = await arc.gateway.admin.registerAgent({ name: agent.name, owner: pack.owner(agent.name), roles: agent.roles, declaredTools: agent.tools, governance: { purpose: `Operate ${agent.tools.join(', ')} for ${pack.name}`, department: pack.id, criticality: 'high', deploymentRef: 'arc-control-sandbox', dataClassification: ['synthetic'] } }, actor);
+      const { apiKey } = await arc.gateway.admin.issueKey(reg.id, actor);
+      seeded[agent.name] = { id: reg.id, apiKey };
+    }
+  }
   await arc.assurance.seedBaseline();
-  await arc.listen(apiPort, host);
+  await arc.listen(apiPort, bindHost);
   const consoleApp = createConsole({ apiBase: `http://${host}:${apiPort}`, operatorToken, operatorIdentity: 'meridian-controller@example.com', operatorRoles: ['finance-manager', 'hr-manager', 'security-manager'] });
-  await consoleApp.listen(consolePort, host);
+  await consoleApp.listen(consolePort, bindHost);
   const apiBase = `http://${host}:${apiPort}`;
   const scenarios = createScenarios({ company, seeded, apiBase, operatorToken });
-  const phase2 = createPhase2({ company, seeded, apiBase, operatorToken, arcRoot });
-  harness = { arc, consoleApp, seeded, scenarios, phase2 };
+  const phase2 = createPhase2({ company, seeded, apiBase, operatorToken, arcRoot, gateway: arc.gateway, trustedProxy });
+  const product = createProduct({ company, seeded, apiBase, operatorToken, webhookSigningSecret, hookUrl: `http://${host}:${port}/hooks/arc` });
+  const suites = { [product.id]: product };
+  suites[northwind.id] = createPackRunner({ pack: northwind, catalogue: NORTHWIND_SCENARIOS, company, seeded, apiBase, operatorToken });
+  harness = { arc, consoleApp, seeded, scenarios, phase2, suites, coverage: results => buildCoverage(arcRoot, results) };
   console.log(`\nMERIDIAN COMMERCE SYNTHETIC ENTERPRISE`);
-  console.log(`  Company UI:       http://${host}:${port}`);
+  console.log(`  Validation Lab:   http://${host}:${port}`);
+  console.log(`  Industry packs:   ${packs.map(pack => pack.name).join(', ')}`);
   console.log(`  ARC Control API:  http://${host}:${apiPort}`);
   console.log(`  ARC Console:      http://${host}:${consolePort}`);
   console.log(`  Integration:      generic HTTP connector -> protected Meridian business endpoints`);

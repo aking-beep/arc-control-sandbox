@@ -1,0 +1,46 @@
+# Private hosted test environment.
+#
+#   LAB_DOMAIN=lab.example.com LAB_USER=tester LAB_PASSWORD_HASH='<caddy hash-password output>' \
+#     docker compose -f deploy/docker-compose.yml up -d --build
+#
+# Only Caddy publishes ports. It terminates TLS for LAB_DOMAIN (or serves plain
+# HTTP on :8080 for a VPN/tailnet-only host) and requires a login before any
+# request reaches the Validation Lab or the ARC console. The ARC API (8787) is
+# never published. Replace basic auth with your SSO proxy (Cloudflare Access,
+# Tailscale, oauth2-proxy) for anything beyond a small private test group.
+services:
+  lab:
+    build:
+      context: ..
+      dockerfile: deploy/Dockerfile
+      args:
+        ARC_REF: ${ARC_REF:-main}
+    restart: unless-stopped
+    networks: [internal]
+
+  gate:
+    image: caddy:2.8
+    restart: unless-stopped
+    depends_on: [lab]
+    environment:
+      LAB_DOMAIN: ${LAB_DOMAIN:-:8080}
+      CONSOLE_DOMAIN: ${CONSOLE_DOMAIN:-:8081}
+      LAB_USER: ${LAB_USER:?set LAB_USER}
+      LAB_PASSWORD_HASH: ${LAB_PASSWORD_HASH:?set LAB_PASSWORD_HASH (caddy hash-password)}
+    ports:
+      - "${LAB_BIND:-127.0.0.1}:8080:8080"
+      - "${LAB_BIND:-127.0.0.1}:8081:8081"
+      - "${TLS_BIND:-127.0.0.1}:80:80"
+      - "${TLS_BIND:-127.0.0.1}:443:443"
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy-data:/data
+    networks: [internal, edge]
+
+networks:
+  internal:
+    internal: true
+  edge: {}
+
+volumes:
+  caddy-data: {}
