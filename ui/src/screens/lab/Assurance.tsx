@@ -87,7 +87,7 @@ export function Assurance() {
             <table className="w-full border-collapse">
               <thead><tr><Th>Risk</Th><Th>Control</Th><Th>Rating</Th></tr></thead>
               <tbody>
-                {FINDINGS.map(f => <tr key={f.id}><Td><Link to={`/lab/findings/${f.id}`} className="hover:underline">{f.title}</Link></Td><Td className="font-mono text-[11px] text-muted">{f.id}</Td><Td className="text-[12px] font-medium text-critical-ink">Critical</Td></tr>)}
+                {FINDINGS.map(f => <tr key={f.id}><Td><Link to={`/lab/findings/${f.id}`} className="hover:underline">{f.title}</Link></Td><Td className="font-mono text-[11px] text-muted">{f.id}</Td><Td className={`text-[12px] font-medium capitalize ${f.severity === 'critical' ? 'text-critical-ink' : 'text-warning-ink'}`}>{f.severity}</Td></tr>)}
                 {LIMITATIONS.filter(l => l.control).map(l => <tr key={l.title}><Td>{l.title}</Td><Td className="font-mono text-[11px] text-muted">{l.control}</Td><Td className="text-[12px] text-faint">Not rated</Td></tr>)}
               </tbody>
             </table>
