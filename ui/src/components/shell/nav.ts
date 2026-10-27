@@ -1,7 +1,7 @@
 import {
   Activity, BarChart3, Boxes, Briefcase, Building2, ClipboardCheck, FileSearch, FileText, Gauge, GitBranch,
   Globe, HeartPulse, Headphones, Landmark, LayoutDashboard, Plug, Scale, Settings, ShieldAlert, ShieldCheck,
-  Siren, FlaskConical, Users, Zap, Bot, Palette, Layers, Map, type LucideIcon
+  Siren, FlaskConical, Users, Zap, Bot, Palette, Layers, Map, Radio, type LucideIcon
 } from 'lucide-react'
 
 export interface NavItem { to: string; label: string; icon: LucideIcon; keywords?: string }
@@ -20,6 +20,7 @@ export const NAV: NavGroup[] = [
   ] },
   { id: 'lab', label: 'ARC Validation Lab', items: [
     { to: '/lab', label: 'Command Center', icon: LayoutDashboard },
+    { to: '/lab/live', label: 'Live Operations', icon: Radio, keywords: 'live real-time feed agents working day stream' },
     { to: '/lab/agents', label: 'AI Agent Operations', icon: Bot },
     { to: '/lab/scenarios', label: 'Scenario Lab', icon: FlaskConical },
     { to: '/lab/suites', label: 'Suites & Industry Packs', icon: Layers, keywords: 'northwind bank product surface financial services' },

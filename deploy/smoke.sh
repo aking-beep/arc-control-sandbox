@@ -16,6 +16,9 @@ export LAB_USER=smoke
 password="${SMOKE_PASSWORD:-smoke-$(od -An -N12 -tx1 /dev/urandom | tr -d ' \n')}"
 LAB_PASSWORD_HASH="$(docker run --rm caddy:2.8 caddy hash-password --plaintext "$password")"
 export LAB_PASSWORD_HASH
+# Live operations run during the checks, so the harness also proves that test
+# runs pause live traffic and still pass.
+export LIVE_OPS=1 LIVE_RATE="${LIVE_RATE:-120}"
 export SANDBOX_REF="${SANDBOX_REF:-$(git rev-parse HEAD 2>/dev/null || echo unknown)}"
 
 failures=0
@@ -54,9 +57,17 @@ check "/hooks blocked at the edge"    404 "$(code "${auth[@]}" -X POST http://12
 check "/internal blocked at the edge" 404 "$(code "${auth[@]}" -X POST http://127.0.0.1:8080/internal/bank/payment -d '{}')"
 check "ARC API not published"         000 "$(code http://127.0.0.1:8787/health)"
 check "lab not published directly"    000 "$(code http://127.0.0.1:8890/api/health)"
+# The live feed is a server-sent event stream; it must pass the gate unbuffered.
+stream="$(curl -sN --max-time 4 "${auth[@]}" http://127.0.0.1:8080/api/live/stream || true)"
+check "live stream reaches the browser through the gate" yes "$(grep -q '^event: snapshot' <<<"$stream" && echo yes || echo no)"
+check "live stream refuses no login"  401 "$(code http://127.0.0.1:8080/api/live/stream)"
+
+sleep 20
+if docker exec "$lab" node src/live-check.mjs --min 20; then echo "ok    live operations running, no anomaly"; else echo "FAIL  live operations"; failures=$((failures + 1)); fi
 
 echo "== npm run product -- --quick inside the lab container"
 if docker exec "$lab" npm run product -- --quick; then echo "ok    product harness"; else echo "FAIL  product harness"; failures=$((failures + 1)); fi
+if docker exec "$lab" node src/live-check.mjs --min 20; then echo "ok    live operations still clean after the harness"; else echo "FAIL  live operations after the harness"; failures=$((failures + 1)); fi
 mkdir -p reports && docker cp "$lab:/opt/arc-control-sandbox/reports/product-latest.json" reports/product-docker.json 2>/dev/null || true
 
 echo "== $failures failure(s)"

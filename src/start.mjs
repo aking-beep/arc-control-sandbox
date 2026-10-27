@@ -9,6 +9,7 @@ import { createProduct } from './product.mjs';
 import { northwind, NORTHWIND_SCENARIOS } from './packs/northwind.mjs';
 import { createPackRunner } from './packs/runner.mjs';
 import { buildCoverage } from './coverage.mjs';
+import { createLiveOps } from './live/engine.mjs';
 
 // ARC remains a sibling checkout, independently versioned. This harness uses
 // its public exported packages; no changes to arc-control source are required.
@@ -140,15 +141,20 @@ try {
   const product = createProduct({ company, seeded, apiBase, operatorToken, webhookSigningSecret, hookUrl: `http://${host}:${port}/hooks/arc` });
   const suites = { [product.id]: product };
   suites[northwind.id] = createPackRunner({ pack: northwind, catalogue: NORTHWIND_SCENARIOS, company, seeded, apiBase, operatorToken });
-  harness = { arc, consoleApp, seeded, scenarios, phase2, suites, coverage: results => buildCoverage(arcRoot, results) };
+  const live = createLiveOps({ company, seeded, apiBase, operatorToken, northwindPack: northwind });
+  harness = { arc, consoleApp, seeded, scenarios, phase2, suites, live, coverage: results => buildCoverage(arcRoot, results) };
+  // Live operations start paused unless asked for: `npm run live`, or LIVE_OPS=1 on a server.
+  const liveOn = process.argv.includes('--live') || process.env.LIVE_OPS === '1';
+  if (liveOn) live.start({ seed: process.env.LIVE_SEED, rate: process.env.LIVE_RATE });
   console.log(`\nMERIDIAN COMMERCE SYNTHETIC ENTERPRISE`);
   console.log(`  Validation Lab:   http://${host}:${port}`);
   console.log(`  Industry packs:   ${packs.map(pack => pack.name).join(', ')}`);
   console.log(`  ARC Control API:  http://${host}:${apiPort}`);
   console.log(`  ARC Console:      http://${host}:${consolePort}`);
   console.log(`  Integration:      generic HTTP connector -> protected Meridian business endpoints`);
+  console.log(`  Live operations:  ${liveOn ? `running (seed ${live.snapshot().seed}, ${live.snapshot().rate} actions/min)` : 'paused · start from Live Operations or run npm run live'}`);
   console.log(`  Safety:           local-loopback-only, synthetic data and effects\n`);
-  process.on('SIGINT', async () => { await consoleApp.close(); await arc.close(); await company.close(); process.exit(0); });
+  process.on('SIGINT', async () => { live.stop(); await consoleApp.close(); await arc.close(); await company.close(); process.exit(0); });
 } catch (e) {
   console.error('\nUnable to start ARC-integrated sandbox:', e.stack || e);
   console.error(`\nEnsure a clone of aking-beep/arc-control exists at ${arcRoot} and run npm install && npm run build in that repository.`);

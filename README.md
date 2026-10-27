@@ -100,6 +100,8 @@ ARC Assurance is invoked through the shipped `POST /v1/assurance/runs` and `GET 
 ```bash
 npm test             # unit tests: Meridian backend, connector boundary, UI server routes
 npm start            # local integrated three-server environment
+npm run live         # the same, with live operations: agents working through a scripted, seeded day
+npm run live:check   # exit 1 if live operations recorded an anomaly
 npm run smoke        # live 17-scenario suite; requires running environment
 npm run validate     # same 17 scenarios, writes reports/latest.json
 npm run phase2       # phase 2 security, stress, and evidence report; requires npm start
@@ -113,7 +115,7 @@ npm run coverage     # ARC route and capability map from ARC source (--strict fa
 npm run showcase     # read-only static page from the last product run
 ```
 
-`npm run phase2` and `npm run product` exit non-zero while any implemented check fails; that exit code is the result, not a broken runner. On ARC `main` `887dd2f` both exit 0. See [`docs/PRODUCT_HARNESS.md`](docs/PRODUCT_HARNESS.md) for the suites, industry packs, CI and hosting.
+`npm run phase2` and `npm run product` exit non-zero while any implemented check fails; that exit code is the result, not a broken runner. On ARC `main` `887dd2f` both exit 0. See [`docs/PRODUCT_HARNESS.md`](docs/PRODUCT_HARNESS.md) for the suites, industry packs, CI and hosting, and [`docs/LIVE_OPERATIONS.md`](docs/LIVE_OPERATIONS.md) for live operations.
 
 ## Meridian Validation Lab UI
 

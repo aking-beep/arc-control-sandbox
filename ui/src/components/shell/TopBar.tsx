@@ -4,6 +4,7 @@ import { useData } from '../../api/DataProvider'
 import { crumbsFor } from './nav'
 import { useUI } from './UIContext'
 import { LIMITATIONS } from '../../data/baseline'
+import { LiveState } from '../lab/LiveState'
 
 export function TopBar() {
   const { pathname } = useLocation()
@@ -42,6 +43,8 @@ export function TopBar() {
           </button>
         ))}
       </div>
+
+      <LiveState compact />
 
       <div className="flex items-center gap-3 text-[12px] text-muted">
         <Dot ok={health.status === 'live'} loading={health.status === 'loading'} label="Meridian" />

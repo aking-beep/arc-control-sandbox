@@ -14,11 +14,14 @@
 #      the stack, and waits until the gateway is configured;
 #   6. prints the addresses and the login.
 #
+# Live operations (agents working through a scripted, seeded day) start with
+# the stack; --no-live leaves them paused, --live-rate sets actions per minute.
+#
 # --no-tls serves plain HTTP on 127.0.0.1:8080/8081 instead (for trying the
 # script on a machine with no public name). --skip-install skips step 1.
 set -euo pipefail
 
-domain='' console='' arc_ref='main' new_password=0 tls=1 install=1 user=''
+domain='' console='' arc_ref='main' new_password=0 tls=1 install=1 user='' live=1 live_rate=20
 while [ $# -gt 0 ]; do
   case "$1" in
     --domain) domain="$2"; shift 2 ;;
@@ -28,6 +31,8 @@ while [ $# -gt 0 ]; do
     --new-password) new_password=1; shift ;;
     --no-tls) tls=0; shift ;;
     --skip-install) install=0; shift ;;
+    --no-live) live=0; shift ;;
+    --live-rate) live_rate="$2"; shift 2 ;;
     *) echo "unknown option: $1" >&2; exit 2 ;;
   esac
 done
@@ -117,6 +122,8 @@ SANDBOX_REF=$(git rev-parse HEAD 2>/dev/null || echo unknown)
 LAB_USER=$user
 $hash_line
 LAB_BIND=127.0.0.1
+LIVE_OPS=$live
+LIVE_RATE=$live_rate
 $sites
 EOF
 chmod 600 "$env_file"

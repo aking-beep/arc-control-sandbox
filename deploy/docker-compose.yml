@@ -18,6 +18,11 @@ services:
         ARC_REF: ${ARC_REF:-main}
         SANDBOX_REF: ${SANDBOX_REF:-unknown}
     restart: unless-stopped
+    # Live operations: a scripted, seeded working day for the agents (src/live/).
+    environment:
+      LIVE_OPS: ${LIVE_OPS:-0}
+      LIVE_SEED: ${LIVE_SEED:-1}
+      LIVE_RATE: ${LIVE_RATE:-20}
     networks: [internal]
 
   gate:

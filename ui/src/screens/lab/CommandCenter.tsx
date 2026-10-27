@@ -17,10 +17,15 @@ import type { DataSource } from '../../api/types'
 import { ORIGINAL } from '../../data/catalog'
 import { ENDPOINTS } from '../../data/registry'
 import { runStatus, fmtTime, fmtMs } from '../../lib/status'
+import { useLiveOps } from '../../api/LiveProvider'
+import { LiveFeed } from '../../components/lab/LiveFeed'
+import { LiveState } from '../../components/lab/LiveState'
 
 export function CommandCenter() {
   const { latestRunById, running, runAll, runPhase2All, runs, state, stressRuns, scenarios, arcReady } = useData()
   const p2 = usePhase2()
+  const live = useLiveOps()
+  const lc = live.snapshot?.counts
   const findings = useFindingStates()
   const unmapped = useUnmappedFailures()
   const liveCounts = ORIGINAL.reduce((acc, s) => {
@@ -53,6 +58,15 @@ export function CommandCenter() {
       />
 
       <StatusStrip />
+
+      <Section className="mt-5" pad={false}
+        title={<span className="flex items-center gap-2">Live operations <LiveState compact /></span>}
+        aside={<span className="flex items-center gap-3 text-[12px] text-muted">
+          {lc && <span className="font-mono">{lc.actions} actions · <span className="text-success">{lc.executed}</span> executed · <span className="text-warning-ink">{lc.pending_approval}</span> held · <span className="text-critical-ink">{lc.denied + lc.refused}</span> stopped · <span className={lc.anomalies ? 'text-critical-ink' : 'text-success'}>{lc.anomalies} anomalies</span></span>}
+          <Link to="/lab/live" className="font-medium text-teal-ink hover:underline">Open →</Link>
+        </span>}>
+        <LiveFeed events={live.events} limit={6} empty="Live operations are not running. Open Live Operations and press Start to watch the agents work through a day." />
+      </Section>
 
       <div className="mt-5 grid gap-5 lg:grid-cols-[minmax(0,1.65fr)_minmax(0,1fr)]">
         <Section title="Validation overview" aside={<><span className="text-[11.5px] text-faint">No aggregate readiness score</span><ReportImport variant="ghost" label="Load report" /></>} pad={false}>

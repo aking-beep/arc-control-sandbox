@@ -7,6 +7,7 @@ import { redact } from './redact.mjs';
 
 const root = dirname(dirname(fileURLToPath(import.meta.url)));
 // Saved runner output. Read-only here; npm run validate / npm run phase2 write it.
+const STATE_ROWS = 300;
 const REPORT_FILES = { integration: 'latest.json', phase2: 'phase2-latest.json', product: 'product-latest.json' };
 const MEDIA = { '.html': 'text/html; charset=utf-8', '.js': 'text/javascript; charset=utf-8', '.css': 'text/css; charset=utf-8', '.svg': 'image/svg+xml', '.png': 'image/png', '.ico': 'image/x-icon', '.woff2': 'font/woff2', '.json': 'application/json; charset=utf-8' };
 const initial = () => ({
@@ -32,6 +33,15 @@ export function createCompany({ executionToken, getHarness, port = 8890, host = 
   // connector kill switch, policy versions), so suite runs never overlap.
   let suiteQueue = Promise.resolve();
   const serialised = task => { const next = suiteQueue.then(task, task); suiteQueue = next.catch(() => {}); return next; };
+  // Live operations (src/live/engine.mjs) share the same ARC process and the
+  // same mutation log the checks count. Every test run therefore pauses live
+  // traffic and waits for the action in flight before it starts.
+  const withTests = async task => {
+    const live = getHarness()?.live;
+    try { await live?.quiesce(); return await task(); }
+    finally { live?.release(); }
+  };
+  const streams = new Set();
   // ARC notification deliveries received at /hooks/arc, kept raw so a check can verify the signature.
   const hooks = [];
   const equal = (a, b) => {
@@ -138,7 +148,39 @@ export function createCompany({ executionToken, getHarness, port = 8890, host = 
         try { return json(res, 200, apply(path.slice('/internal/'.length).replaceAll('/', '.'), await parse(req))); }
         catch (e) { return json(res, 400, { error: String(e.message) }); }
       }
-      if (req.method === 'GET' && path === '/api/state') return json(res, 200, { ...state, runs: runs.slice(-40) });
+      if (req.method === 'GET' && path === '/api/state') {
+        // A live day grows these lists all day; the UI gets the most recent
+        // rows and the totals. ?full=1 returns everything.
+        if (url.searchParams.get('full') === '1') return json(res, 200, { ...state, runs: runs.slice(-40) });
+        const totals = {};
+        const capped = Object.fromEntries(Object.entries(state).map(([key, value]) => {
+          if (!Array.isArray(value) || value.length <= STATE_ROWS) return [key, value];
+          totals[key] = value.length;
+          return [key, value.slice(-STATE_ROWS)];
+        }));
+        return json(res, 200, { ...capped, totals, runs: runs.slice(-40) });
+      }
+      if (path === '/api/live' || path.startsWith('/api/live/')) {
+        const live = getHarness()?.live;
+        if (!live) return json(res, 503, { error: 'live operations not initialized' });
+        if (req.method === 'GET' && path === '/api/live') return json(res, 200, live.snapshot());
+        if (req.method === 'GET' && path === '/api/live/stream') {
+          res.writeHead(200, { 'content-type': 'text/event-stream; charset=utf-8', 'cache-control': 'no-store', connection: 'keep-alive', 'x-accel-buffering': 'no' });
+          res.write(`event: snapshot\ndata: ${JSON.stringify(live.snapshot())}\n\n`);
+          const off = live.subscribe(event => res.write(`data: ${JSON.stringify(event)}\n\n`));
+          const beat = setInterval(() => res.write(': keep-alive\n\n'), 15000);
+          streams.add(res);
+          req.on('close', () => { off(); clearInterval(beat); streams.delete(res); });
+          return;
+        }
+        if (req.method === 'POST') {
+          const body = await parse(req);
+          if (path === '/api/live/start') return json(res, 200, live.start({ seed: body.seed, rate: body.rate }));
+          if (path === '/api/live/pause') return json(res, 200, live.pause());
+          if (path === '/api/live/new-day') return json(res, 200, await withTests(async () => { state = fresh(); return live.newDay({ seed: body.seed }); }));
+        }
+        return json(res, 404, { error: 'unknown_live_route' });
+      }
       if (req.method === 'GET' && path === '/api/health') return json(res, 200, { status: 'ok', mode: 'synthetic', gatewayConfigured: !!getHarness(), phase2Configured: !!getHarness()?.phase2 });
       if (req.method === 'GET' && path.startsWith('/api/reports/')) {
         const kind = path.slice('/api/reports/'.length);
@@ -177,21 +219,22 @@ export function createCompany({ executionToken, getHarness, port = 8890, host = 
         const harness=getHarness();
         if (!harness) return json(res,503,{error:'ARC Control not initialized'});
         const args=await parse(req);
-        const result = path === '/api/assurance'
-          ? await harness.scenarios.assurance()
+        const result = await withTests(() => path === '/api/assurance'
+          ? harness.scenarios.assurance()
           : path === '/api/stress'
-            ? await harness.scenarios.stress(args)
-            : await harness.scenarios.load(args);
+            ? harness.scenarios.stress(args)
+            : harness.scenarios.load(args));
         return json(res,200,result);
       }
       if (req.method === 'POST' && path === '/api/reset') {
-        state = fresh(); runs.length = 0; phase2Runs.length = 0; for (const key of Object.keys(suiteRuns)) delete suiteRuns[key]; return json(res, 200, { reset: true, note: 'Business fixtures reset; ARC audit history intentionally preserved.' });
+        await withTests(async () => { state = fresh(); runs.length = 0; phase2Runs.length = 0; for (const key of Object.keys(suiteRuns)) delete suiteRuns[key]; });
+        return json(res, 200, { reset: true, note: 'Business fixtures reset; ARC audit history intentionally preserved.' });
       }
       if (req.method === 'POST' && path.startsWith('/api/phase2/')) {
         const harness = getHarness();
         if (!harness?.phase2) return json(res, 503, { error: 'Phase 2 runner not initialized' });
         const id = decodeURIComponent(path.slice('/api/phase2/'.length));
-        const result = id === 'all' ? await harness.phase2.all() : await harness.phase2.run(id);
+        const result = await withTests(() => id === 'all' ? harness.phase2.all() : harness.phase2.run(id));
         if (Array.isArray(result)) phase2Runs.push(...result);
         else if (result?.scenarios) phase2Runs.push(...result.scenarios);
         else phase2Runs.push(result);
@@ -213,7 +256,7 @@ export function createCompany({ executionToken, getHarness, port = 8890, host = 
         if (!suite) return json(res, getHarness() ? 404 : 503, { error: getHarness() ? 'unknown_suite' : 'ARC Control not initialized' });
         if (req.method === 'GET' && !checkId) return json(res, 200, { id: suite.id, name: suite.name, kind: suite.kind, scenarios: suite.list(), runs: (suiteRuns[suiteId] || []).slice(-100) });
         if (req.method === 'POST' && checkId) {
-          const result = await serialised(() => checkId === 'all' ? suite.all() : suite.run(checkId));
+          const result = await serialised(() => withTests(() => checkId === 'all' ? suite.all() : suite.run(checkId)));
           (suiteRuns[suiteId] ||= []).push(...(Array.isArray(result) ? result : [result]));
           return json(res, 200, result);
         }
@@ -223,7 +266,7 @@ export function createCompany({ executionToken, getHarness, port = 8890, host = 
         const harness = getHarness();
         if (!harness) return json(res, 503, { error: 'ARC Control not initialized' });
         const id = path.slice('/api/scenarios/'.length);
-        const result = id === 'all' ? await harness.scenarios.all() : await harness.scenarios.run(id);
+        const result = await withTests(() => id === 'all' ? harness.scenarios.all() : harness.scenarios.run(id));
         if (Array.isArray(result)) runs.push(...result); else runs.push(result);
         return json(res, 200, result);
       }
@@ -258,6 +301,24 @@ export function createCompany({ executionToken, getHarness, port = 8890, host = 
   return {
     server, state: () => structuredClone(state), runs,
     resetBusiness: () => { state = fresh(); },
+    /** The live state itself, for read-only use by the live engine (no copy per action). */
+    view: () => state,
+    mutationsSince: mark => state.mutationLog.slice(mark),
+    port: () => server.address()?.port ?? port,
+    /** Adds the live day's customers, employees and pack records by id; existing records are left as they are. */
+    extendBusiness: ({ customers = [], employees = [], packs: packRecords = {} } = {}) => {
+      for (const c of customers) if (!state.customers.some(x => x.id === c.id)) state.customers.push({ ...c });
+      for (const e of employees) if (!state.employees.some(x => x.id === e.id)) state.employees.push({ ...e });
+      for (const [id, records] of Object.entries(packRecords)) {
+        const target = state.packs[id];
+        if (!target) continue;
+        for (const b of records.beneficiaries ?? []) {
+          if (!target.beneficiaries.some(x => x.name === b.name)) target.beneficiaries.push({ id: `ben-${300 + target.beneficiaries.length + 1}`, ...b });
+        }
+      }
+    },
+    /** An inbound customer ticket: business input, not an agent effect, so it is not in the mutation log. */
+    addTicket: ticket => { state.tickets.push({ ...ticket }); },
     apply,
     faultLog: () => state.faultLog.length,
     hooks: () => hooks.slice(),
@@ -266,6 +327,6 @@ export function createCompany({ executionToken, getHarness, port = 8890, host = 
       server.once('error', reject);
       server.listen(port, host, () => resolve({ host, port: server.address().port }));
     }),
-    close: () => new Promise(resolve => server.close(resolve))
+    close: () => new Promise(resolve => { for (const res of streams) res.end(); streams.clear(); server.close(resolve); })
   };
 }

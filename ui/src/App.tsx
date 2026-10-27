@@ -1,6 +1,7 @@
 import { HashRouter, Routes, Route, Navigate } from 'react-router-dom'
 import { DataProvider } from './api/DataProvider'
 import { ReportsProvider } from './api/ReportsProvider'
+import { LiveProvider } from './api/LiveProvider'
 import { DesignSystem } from './screens/system/DesignSystem'
 import { UIProvider } from './components/shell/UIContext'
 import { Shell } from './components/shell/Shell'
@@ -19,6 +20,7 @@ import { Evidence } from './screens/lab/Evidence'
 import { Reports } from './screens/lab/Reports'
 import { Suites } from './screens/lab/Suites'
 import { Coverage } from './screens/lab/Coverage'
+import { LiveOps } from './screens/lab/LiveOps'
 import { CompanyWebsite } from './screens/enterprise/CompanyWebsite'
 import { EnterpriseOverview } from './screens/enterprise/EnterpriseOverview'
 import { DepartmentScreen } from './screens/enterprise/DepartmentScreen'
@@ -29,6 +31,7 @@ import { Settings } from './screens/system/Settings'
 export function App() {
   return (
     <DataProvider>
+      <LiveProvider>
       <ReportsProvider>
       <HashRouter>
         <UIProvider>
@@ -36,6 +39,7 @@ export function App() {
             <Route element={<Shell />}>
               <Route index element={<Navigate to="/lab" replace />} />
               <Route path="lab" element={<CommandCenter />} />
+              <Route path="lab/live" element={<LiveOps />} />
               <Route path="lab/agents" element={<AgentOps />} />
               <Route path="lab/agents/:name" element={<AgentDetail />} />
               <Route path="lab/scenarios" element={<ScenarioLab />} />
@@ -63,6 +67,7 @@ export function App() {
         </UIProvider>
       </HashRouter>
       </ReportsProvider>
+      </LiveProvider>
     </DataProvider>
   )
 }
