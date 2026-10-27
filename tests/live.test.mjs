@@ -107,3 +107,46 @@ test('live routes need the harness', async () => {
   const { company, url } = await serve({});
   try { assert.equal((await fetch(url('/api/live'))).status, 503); } finally { await company.close(); }
 });
+
+// A stand-in for ARC: every action is held for approval, every vote and release succeeds.
+// Enough to drive the engine's scheduling without the real gateway.
+const engineHarness = async () => {
+  const { createLiveOps } = await import('../src/live/engine.mjs');
+  const state = { customers: [], employees: [], tickets: [], mutationLog: [], packs: { northwind: { beneficiaries: [{ id: 'ben-301', name: 'A', country: 'DE' }] } } };
+  const company = {
+    view: () => state, mutationsSince: mark => state.mutationLog.slice(mark), port: () => 1,
+    extendBusiness: ({ customers = [], employees = [] }) => { for (const c of customers) if (!state.customers.some(x => x.id === c.id)) state.customers.push(c); for (const e of employees) if (!state.employees.some(x => x.id === e.id)) state.employees.push(e); },
+    addTicket: t => state.tickets.push(t), resetBusiness: () => { state.mutationLog.length = 0; }
+  };
+  const realFetch = globalThis.fetch;
+  globalThis.fetch = async (url) => {
+    const body = String(url).includes('/vote') ? {} : String(url).includes('/execute') ? { outcome: 'executed', evidenceId: 'ev' } : { outcome: 'pending_approval', approvalId: `ap-${Math.random()}`, evidenceId: 'ev', decision: { effect: 'REQUIRE_APPROVAL' } };
+    return new Response(JSON.stringify(body), { status: 200 });
+  };
+  const seeded = new Proxy({}, { get: () => ({ apiKey: 'k' }) });
+  const live = createLiveOps({ company, seeded, apiBase: 'http://arc.invalid', operatorToken: 't', northwindPack: { id: 'northwind' } });
+  return { live, restore: () => { globalThis.fetch = realFetch; } };
+};
+
+test('every story beat in a cycle runs, even when an approval falls due on its step', async () => {
+  const { live, restore } = await engineHarness();
+  try {
+    live.start({ seed: 3 }); live.pause();
+    for (let i = 0; i < 120; i += 1) await live.step();
+    const beats = live.snapshot().events.filter(e => e.kind === 'story').map(e => e.summary);
+    assert.deepEqual(beats.sort(), ['Compromised sales agent', 'Duplicate refund request', 'Hotfix straight to production', 'Malformed and out-of-role requests', 'Refund surge at month end', 'Request around ARC'].sort());
+  } finally { live.stop(); restore(); }
+});
+
+test('a new day starts with an empty feed', async () => {
+  const { live, restore } = await engineHarness();
+  try {
+    live.start({ seed: 3 }); live.pause();
+    for (let i = 0; i < 10; i += 1) await live.step();
+    assert.ok(live.snapshot().events.some(e => e.day === 1 && e.kind !== 'status'), 'day 1 has activity');
+    const snap = await live.newDay({ seed: 4 });
+    assert.equal(snap.day, 2);
+    assert.deepEqual(snap.events.filter(e => e.day !== 2), [], 'no event from the previous day');
+    assert.equal(snap.counts.actions, 0);
+  } finally { live.stop(); restore(); }
+});

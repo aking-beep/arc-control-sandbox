@@ -49,6 +49,7 @@ export function createLiveOps({ company, seeded, apiBase, operatorToken, northwi
     plan = rng(status.seed);
     storyQueue = [];
     replayCandidate = null;
+    events.length = 0;
   };
   newDay(LIVE_DEFAULTS.seed);
   status.day = 0;
@@ -317,13 +318,14 @@ export function createLiveOps({ company, seeded, apiBase, operatorToken, northwi
     }
     status.tick += 1;
     ensureWorld();
-    const due = pending.findIndex(p => p.dueTick <= status.tick);
-    if (due >= 0) return decideApproval(pending.splice(due, 1)[0]);
+    // Queue the story beat first: a step spent on a due approval must not skip it.
     const beat = STORIES[status.tick % STORY_CYCLE];
     if (beat) {
       emit({ kind: 'story', summary: beat[0], ok: true });
       storyQueue.push(...beat[1]().map(a => ({ ...a, story: beat[0] })));
     }
+    const due = pending.findIndex(p => p.dueTick <= status.tick);
+    if (due >= 0) return decideApproval(pending.splice(due, 1)[0]);
     const next = storyQueue.shift() ?? routine();
     if (next.replay) return replay();
     if (next.bypass) return bypass();

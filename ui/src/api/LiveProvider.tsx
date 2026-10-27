@@ -72,11 +72,13 @@ export function LiveProvider({ children }: { children: ReactNode }) {
         setSnapshot(prev => {
           if (!prev) return prev
           const next = { ...prev, ...(e.status ?? {}), tick: e.tick, day: e.day, counts: e.counts ?? prev.counts }
-          if (e.kind === 'anomaly') next.anomalies = [...prev.anomalies, e].slice(-50)
+          if (e.day !== prev.day) { next.anomalies = []; next.pendingApprovals = [] }
+          if (e.kind === 'anomaly') next.anomalies = [...next.anomalies, e].slice(-50)
           return next
         })
         if (e.kind === 'status') return
-        setEvents(prev => [...prev, e].slice(-KEEP))
+        // A new day (from any browser, or the 24-hour rollover) starts the feed afresh.
+        setEvents(prev => [...prev.filter(x => x.day === e.day), e].slice(-KEEP))
         if (e.kind === 'action' || e.kind === 'approval' || e.kind === 'inbound' || e.kind === 'anomaly') nudge()
       }
       source.onerror = () => setLink('polling')
