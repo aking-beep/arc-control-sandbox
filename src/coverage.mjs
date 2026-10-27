@@ -23,7 +23,16 @@ export const ROUTE_GAPS = {
   'GET /v1/operator-sessions': 'OIDC sessions are not created in this harness.',
   'POST /v1/operator-sessions/revoke': 'OIDC sessions are not created in this harness.',
   'POST /v1/findings/:id': 'Editing findings would change the governance record the assurance checks read.',
-  'POST /v1/findings/:id/resolve': 'Resolving findings would change the governance record the assurance checks read.'
+  'POST /v1/findings/:id/resolve': 'Resolving findings would change the governance record the assurance checks read.',
+  // ARC 2.3 (ADR-0002). Stated gaps until the harness has checks for them;
+  // ARC covers them in evals/spend, evals/gates and the gateway tests.
+  'GET /v1/budgets': 'Spend control (ARC 2.3) has no harness check yet.',
+  'POST /v1/budgets': 'Spend control (ARC 2.3) has no harness check yet.',
+  'GET /v1/spend': 'Spend control (ARC 2.3) has no harness check yet.',
+  'POST /v1/spend': 'Spend control (ARC 2.3) has no harness check yet.',
+  'POST /v1/spend/report': 'Spend control (ARC 2.3) has no harness check yet.',
+  'POST /v1/mcp/register': 'The MCP registration gate (ARC 2.3) is off unless ARC_MCP_MIN_GRADE is set; the harness stack does not set it.',
+  'POST /v1/agents/:id/prompt-review': 'The prompt gate (ARC 2.3) is off unless ARC_PROMPT_MIN_GRADE is set; the harness stack does not set it.'
 };
 
 /** Capabilities that are not a single route. `checks` name suite:id; `status` is set for things ARC does not ship. */
