@@ -12,7 +12,8 @@ cd "$(dirname "$0")/.."
 
 compose=(docker compose -f deploy/docker-compose.yml)
 export LAB_USER=smoke
-password="smoke-$(od -An -N12 -tx1 /dev/urandom | tr -d ' \n')"
+# A fresh password per run unless one is given; KEEP=1 prints it at the end.
+password="${SMOKE_PASSWORD:-smoke-$(od -An -N12 -tx1 /dev/urandom | tr -d ' \n')}"
 LAB_PASSWORD_HASH="$(docker run --rm caddy:2.8 caddy hash-password --plaintext "$password")"
 export LAB_PASSWORD_HASH
 export SANDBOX_REF="${SANDBOX_REF:-$(git rev-parse HEAD 2>/dev/null || echo unknown)}"
@@ -33,7 +34,14 @@ for _ in $(seq 1 60); do
   sleep 2
 done
 check "lab container healthy" healthy "$(docker inspect -f '{{.State.Health.Status}}' "$lab")"
-for _ in $(seq 1 15); do [ "$(code -u "smoke:$password" http://127.0.0.1:8080/api/health)" = 200 ] && break; sleep 1; done
+# Healthy means the lab port answers; ready means ARC, the console and the
+# seeded agents are up, which /api/health reports as gatewayConfigured.
+ready=no
+for _ in $(seq 1 60); do
+  if curl -fs --max-time 5 -u "smoke:$password" http://127.0.0.1:8080/api/health | grep -q '"gatewayConfigured":true'; then ready=yes; break; fi
+  sleep 2
+done
+check "ARC gateway configured behind the gate" yes "$ready"
 
 auth=(-u "smoke:$password")
 check "lab refuses no login"          401 "$(code http://127.0.0.1:8080/)"
@@ -52,4 +60,5 @@ if docker exec "$lab" npm run product -- --quick; then echo "ok    product harne
 mkdir -p reports && docker cp "$lab:/opt/arc-control-sandbox/reports/product-latest.json" reports/product-docker.json 2>/dev/null || true
 
 echo "== $failures failure(s)"
+[ "${KEEP:-}" = 1 ] && echo "Left running: http://127.0.0.1:8080 and http://127.0.0.1:8081, user smoke, password $password"
 [ "$failures" = 0 ]

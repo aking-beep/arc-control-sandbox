@@ -103,7 +103,7 @@ What Northwind showed about ARC:
 ## Hosting
 
 - **Read-only showcase:** `npm run showcase` builds a static page from the last product run. It has no API calls and no controls, and is safe to host anywhere.
-- **Private test environment:** `deploy/` (see `deploy/README.md`). One container with a pinned ARC ref, behind an authenticating Caddy proxy. The ARC API is never published. `/hooks/*` is refused at the edge. The servers bind beyond loopback only with `SANDBOX_ALLOW_REMOTE_BIND=1`. Built and brought up on 27 Oct 2026: `deploy/smoke.sh` checks the gate (11 checks) and runs the whole harness inside the container, and the `hosted` CI job runs it on every change.
+- **Private test environment:** `deploy/` (see `deploy/README.md`). One container with a pinned ARC ref, behind an authenticating Caddy proxy. The ARC API is never published. `/hooks/*` is refused at the edge. The servers bind beyond loopback only with `SANDBOX_ALLOW_REMOTE_BIND=1`. Built and brought up on 27 Oct 2026: `deploy/smoke.sh` checks the gate (12 checks) and runs the whole harness inside the container, and the `hosted` CI job runs it on every change.
 - **Not built yet:** splitting ARC and Meridian into separate containers on separate networks. That is what makes the network-segmentation capability testable; today they share one process.
 
 ## Remaining gaps

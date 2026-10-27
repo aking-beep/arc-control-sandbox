@@ -34,5 +34,5 @@ ENV ARC_REVISION=${ARC_REF} \
     SANDBOX_ALLOW_REMOTE_BIND=1
 EXPOSE 8890 8788
 HEALTHCHECK --interval=30s --timeout=5s --start-period=20s \
-  CMD ["node", "-e", "fetch('http://127.0.0.1:8890/api/health').then(r => process.exit(r.ok ? 0 : 1), () => process.exit(1))"]
+  CMD ["node", "-e", "fetch('http://127.0.0.1:8890/api/health').then(r => r.json()).then(h => process.exit(h.gatewayConfigured === true ? 0 : 1), () => process.exit(1))"]
 CMD ["node", "src/start.mjs"]

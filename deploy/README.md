@@ -31,7 +31,8 @@ docker compose -f deploy/docker-compose.yml up -d     # uses the image you built
 
 ```bash
 ARC_REF=<sha> bash deploy/smoke.sh     # build, bring up, check, run the harness, tear down
-KEEP=1 bash deploy/smoke.sh            # same, but leave it running
+KEEP=1 bash deploy/smoke.sh            # same, but leave it running and print the login
+SMOKE_PASSWORD=... KEEP=1 bash deploy/smoke.sh   # choose the login password yourself
 SKIP_BUILD=1 bash deploy/smoke.sh      # use an image you already built
 ```
 
@@ -51,7 +52,7 @@ docker exec deploy-lab-1 npm run product
 ## Last verified
 
 27 Oct 2026, ARC Control `main` `8b0eb4b`, Docker 29.9 with Compose 5.6, built behind a TLS-inspecting proxy with the `extra_ca` secret:
-- `smoke.sh`: all 11 checks pass.
+- `smoke.sh`: all 12 checks pass, including the gateway being configured behind the gate before anything else runs.
 - Harness inside the container: original 17/17; Phase 2 35 pass / 0 fail / 3 unsupported / 2 not implemented; stress pass; product 22 pass; Northwind 13 pass; 17/17 recheck; 76 routes, 0 unmapped.
 - Northwind run through the gate from the browser-facing port: 13 pass, 2 unsupported.
 - The report records both commits (`ARC_REVISION` / `SANDBOX_REVISION` are set in the image, which has no `.git`).
