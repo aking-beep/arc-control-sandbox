@@ -56,7 +56,7 @@ The run recorded on 26 Oct against ARC `162d00d` (3 Phase 2 failures, one called
 | --- | --- | --- | --- |
 | ARC-SEC-001 concurrent idempotency | `concurrent-idempotency` | resolved: 5 rounds × 8 parallel → 1 refund each | arc-control#11 (issue #13 closed) |
 | ARC-SEC-002 release ignores current policy | `policy-change-before-release` | resolved: release denied, 0 refunds | arc-control#11 (issue #14 closed) |
-| ARC-SEC-003 retired agent reactivated | `retired-agent-final`, `product:retired-agent-resume-refused` | resolved at the API: activate and resume → 409 | aa2f37c; `registry.resume()` hardening in arc-control#16 (issue #15) |
+| ARC-SEC-003 retired agent reactivated | `retired-agent-final`, `product:retired-agent-resume-refused` | resolved at the API: activate and resume → 409 | aa2f37c; registry hardening in arc-control#12, open (issue #15; #16 closed as superseded) |
 
 All three were retested independently: once by a separate agent on unmodified harness code, and again by this product run. They stay listed in the Lab as resolved, with that evidence. If a check fails again, the finding shows as a regression.
 
