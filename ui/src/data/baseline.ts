@@ -1,23 +1,23 @@
 /**
  * BASELINE — the latest committed measurement, recorded in docs/VALIDATION_LAB.md
- * (26 Oct 2026, ARC Control 162d00d). The earlier run against ARC aa2f37c is in
- * docs/PHASE_2_READINESS.md. Shown only when neither a run on the current server
- * nor a saved reports/*.json is available, and always labelled as such.
+ * (27 Oct 2026, ARC Control main 887dd2f, `npm run product`). Earlier runs are
+ * kept there and in docs/PHASE_2_READINESS.md. Shown only when neither a run on
+ * the current server nor a saved reports/*.json is available.
  */
-export const BASELINE_NOTE = 'Measured 26 Oct 2026 against ARC 162d00d (docs/VALIDATION_LAB.md) · not re-run in this session'
+export const BASELINE_NOTE = 'Measured 27 Oct 2026 against ARC main 887dd2f (docs/VALIDATION_LAB.md) · not re-run in this session'
 
 export const integrationBaseline = { passed: 17, total: 17, label: 'Original integration' }
 
-export const phase2Baseline = { pass: 30, fail: 3, unsupported: 5, notImplemented: 1 }
+export const phase2Baseline = { pass: 35, fail: 0, unsupported: 3, notImplemented: 2 }
 export const phase2Total = phase2Baseline.pass + phase2Baseline.fail + phase2Baseline.unsupported + phase2Baseline.notImplemented
 
-/** After Phase 2 and stress on the same process; probe agents and disabled probe tools count against 001/002/005/008. */
-export const assuranceBaseline = { pass: 2, fail: 4, not_assessable: 2, not_applicable: 1, attested: 0 } as const
+/** After the full product run on one process: probe agents and disabled probe tools count against several controls; ARC-AI-009 carries the product suite's synthetic attestation. */
+export const assuranceBaseline = { pass: 3, fail: 4, not_assessable: 1, not_applicable: 0, attested: 1 } as const
 
 /**
- * `regression_passing` means the Phase 2 check passed on some run. It is not
- * `resolved`: that needs the ARC fix to be independently retested, which this
- * UI cannot observe, so nothing here ever sets it.
+ * `resolved` needs both a recorded fix in ARC Control and an independent retest
+ * (see `resolution`). Without a resolution record, a passing check only reaches
+ * `regression_passing`. A failing check reopens a resolved finding as a regression.
  */
 export type FindingStage = 'open' | 'fix_proposed' | 'regression_passing' | 'resolved'
 
@@ -41,6 +41,8 @@ export interface Finding {
   describe: (error?: string) => { effects: number | null; label: string } | null
   evidence: string
   relatedScenario: string
+  /** Where the fix landed and who retested it. Absent while the defect is open. */
+  resolution?: { fixedIn: string; fixedBy: string; retests: string[]; note?: string }
 }
 
 export const FINDINGS: Finding[] = [
@@ -59,8 +61,9 @@ export const FINDINGS: Finding[] = [
       'Count finance.refund entries added to the Meridian mutation log. The check repeats this for 5 rounds and stops at the first round that is not exactly 1.',
     ],
     expected: { label: 'Refunds executed', value: '1' },
-    baselineActual: { label: 'Refunds executed', value: '8', effects: 8 },
+    baselineActual: { label: 'Refunds executed', value: '1', effects: 1 },
     expectedEffects: 1,
+    resolution: { fixedIn: 'arc-control main 887dd2f', fixedBy: 'arc-control#11', retests: ['sandbox Phase 2, separate agent, 27 Oct 2026: 5 rounds × 8 parallel → 1 refund each', 'npm run product, 27 Oct 2026: pass'], note: 'First observed on aa2f37c (8 refunds). Tracking issue arc-control#13.' },
     describe: e => { const m = e?.match(/produced (\d+) refunds/); return m ? { effects: Number(m[1]), label: m[1] } : null },
     evidence: 'phase2.mjs returns only the failing round and its refund count; per-request evidence ids are not collected by the check.',
     relatedScenario: 'idempotency',
@@ -81,8 +84,9 @@ export const FINDINGS: Finding[] = [
       'Operator releases it with POST /v1/approvals/:id/execute and the refund log is counted. The temporary policy is then disabled.',
     ],
     expected: { label: 'Release outcome', value: 'Refused · 0 refunds' },
-    baselineActual: { label: 'Release outcome', value: 'Executed · 1 refund', effects: 1 },
+    baselineActual: { label: 'Release outcome', value: 'Refused · 0 refunds', effects: 0 },
     expectedEffects: 0,
+    resolution: { fixedIn: 'arc-control main 887dd2f', fixedBy: 'arc-control#11', retests: ['sandbox Phase 2, separate agent, 27 Oct 2026: release denied, 0 refunds', 'npm run product, 27 Oct 2026: pass'], note: 'First observed on aa2f37c (released and executed). Tracking issue arc-control#14.' },
     describe: e => { const m = e?.match(/outcome (\w+), effects (\d+)\)/); return m ? { effects: Number(m[2]), label: `${m[1][0].toUpperCase()}${m[1].slice(1)} · ${m[2]} refund${m[2] === '1' ? '' : 's'}` } : null },
     evidence: 'phase2.mjs reports the release HTTP status, outcome and effect count in its error string; it does not collect evidence ids.',
     relatedScenario: 'refund-approve',
@@ -94,17 +98,18 @@ export const FINDINGS: Finding[] = [
     severity: 'high',
     component: 'ARC control API · POST /v1/agents/:id/activate → admin.setAgentStatus → registry.resume()',
     control: 'Identity lifecycle — retirement is final; a withdrawn agent can only return by being registered again',
-    summary: 'After retiring an agent, POST /v1/agents/:id/activate returned HTTP 200 instead of 409. First observed against ARC 162d00d; the same check passed against aa2f37c.',
+    summary: 'On ARC 162d00d, POST /v1/agents/:id/activate revived a retired agent (HTTP 200). 162d00d is the repository’s stale default branch and predates the route fix in aa2f37c, so this was an old build, not a regression.',
     check: 'retired-agent-final',
     reproduction: [
       'Register a throwaway agent and issue it a key.',
       'POST /v1/agents/:id/retire → 200, status retired, credentials revoked.',
       'POST /v1/agents/:id/activate. Expected 409 conflict.',
-      'In 162d00d the route calls admin.setAgentStatus(…, \'active\'), which calls registry.resume() → #setStatus. That path skips the retired guard that registry.activate() has (read from source, not executed separately).',
+      'In 162d00d the route reached registry.resume() → #setStatus, skipping the retired guard in registry.activate(). On main the routes refuse with 409; registry.resume() itself is hardened by arc-control#16.',
     ],
     expected: { label: 'Activate response', value: 'HTTP 409' },
-    baselineActual: { label: 'Activate response', value: 'HTTP 200', effects: 1 },
+    baselineActual: { label: 'Activate response', value: 'HTTP 409', effects: 0 },
     expectedEffects: 0,
+    resolution: { fixedIn: 'arc-control aa2f37c (routes); main 887dd2f retested', fixedBy: 'arc-control#9; hardening arc-control#16 (open)', retests: ['sandbox Phase 2 retired-agent-final, 27 Oct 2026: activate → 409, old key → 401', 'product:retired-agent-resume-refused, 27 Oct 2026: resume → 409'], note: 'Tracking issue arc-control#15 closes when #16 merges.' },
     describe: e => { const m = e?.match(/activate retired agent HTTP (\d+)/); return m ? { effects: m[1] === '409' ? 0 : 1, label: `HTTP ${m[1]}` } : null },
     evidence: 'phase2.mjs stops at the first failed assertion, so the follow-up check that the revoked key is still refused was not reached.',
     relatedScenario: 'suspend-agent',

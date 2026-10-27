@@ -1,0 +1,100 @@
+name: ARC Control integration
+
+# Runs the whole-product harness (17 scenarios, Phase 2, stress, product
+# surface, industry packs, coverage) against a real build of aking-beep/arc-control.
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  schedule:
+    - cron: '17 6 * * *'
+  workflow_dispatch:
+    inputs:
+      arc_ref:
+        description: arc-control branch, tag or commit to test
+        default: main
+  repository_dispatch:
+    types: [arc-control-updated]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: arc-integration-${{ github.ref }}-${{ github.event.client_payload.ref || inputs.arc_ref || 'main' }}
+  cancel-in-progress: true
+
+jobs:
+  harness:
+    name: Whole-product harness
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    env:
+      ARC_REF: ${{ github.event.client_payload.ref || inputs.arc_ref || 'main' }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          path: arc-control-sandbox
+
+      # Explicit ref: the repository's default branch is not main.
+      - uses: actions/checkout@v4
+        with:
+          repository: aking-beep/arc-control
+          ref: ${{ env.ARC_REF }}
+          path: arc-control
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+
+      - name: Build ARC Control
+        working-directory: arc-control
+        run: |
+          npm ci --ignore-scripts
+          npm run build
+          echo "ARC_SHA=$(git rev-parse HEAD)" >> "$GITHUB_ENV"
+
+      - name: Sandbox unit and contract tests
+        working-directory: arc-control-sandbox
+        run: npm test
+
+      - name: Validation Lab type check and build
+        working-directory: arc-control-sandbox
+        run: |
+          npm run ui:install
+          npm run ui:build
+
+      - name: Every ARC route is covered or has a stated gap
+        working-directory: arc-control-sandbox
+        run: npm run coverage -- --strict
+
+      - name: Start the integrated stack
+        working-directory: arc-control-sandbox
+        run: |
+          npm run preflight
+          nohup npm start > stack.log 2>&1 &
+          for i in $(seq 1 30); do
+            if curl -fs http://127.0.0.1:8890/api/health | grep -q '"gatewayConfigured":true'; then exit 0; fi
+            sleep 1
+          done
+          cat stack.log
+          exit 1
+
+      - name: Whole-product run
+        working-directory: arc-control-sandbox
+        run: npm run product
+
+      - name: Job summary
+        if: always()
+        working-directory: arc-control-sandbox
+        run: node src/ci-summary.mjs
+
+      - name: Upload reports
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: arc-harness-reports-${{ env.ARC_SHA || env.ARC_REF }}
+          path: |
+            arc-control-sandbox/reports/*.json
+            arc-control-sandbox/stack.log
+          if-no-files-found: warn

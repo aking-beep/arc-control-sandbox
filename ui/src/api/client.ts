@@ -1,7 +1,7 @@
 import type {
   AssuranceResult, EvidenceResponse, HealthResponse, IntegrationReport, LoadRequest, LoadResult, MeridianState,
   Phase2Report, Phase2Response, Phase2Run, Phase2Summary, Resource, SavedReport, ScenarioRun, ScenariosResponse,
-  StressPreset, StressResult
+  StressPreset, StressResult, SuiteSummary, SuiteResponse, SuiteRun, CoverageReport, ProductReport
 } from './types'
 
 /**
@@ -80,6 +80,11 @@ export const meridianApi = {
   runPhase2: (id: string) => call<Phase2Run>(`/api/phase2/${encodeURIComponent(id)}`, { method: 'POST', body: '{}' }),
   runPhase2All: () => call<{ summary: Phase2Summary; scenarios: Phase2Run[] }>('/api/phase2/all', { method: 'POST', body: '{}' }),
   evidence: (id: string) => call<EvidenceResponse>(`/api/arc/evidence/${encodeURIComponent(id)}`),
+  suites: () => call<{ suites: SuiteSummary[] }>('/api/suites'),
+  suite: (id: string) => call<SuiteResponse>(`/api/suites/${encodeURIComponent(id)}`),
+  runSuite: (id: string, check: string) => call<SuiteRun | SuiteRun[]>(`/api/suites/${encodeURIComponent(id)}/${encodeURIComponent(check)}`, { method: 'POST', body: '{}' }),
+  coverage: () => call<CoverageReport>('/api/coverage'),
+  productReport: () => call<SavedReport<ProductReport>>('/api/reports/product'),
   /** A saved report file; `report` is null when the runner has not written one yet. */
   savedReport: <K extends 'integration' | 'phase2'>(kind: K) =>
     call<SavedReport<K extends 'integration' ? IntegrationReport : Phase2Report>>(`/api/reports/${kind}`),
@@ -102,6 +107,9 @@ export const SERVED_ROUTES: Array<{ route: string; purpose: string; source: stri
   { route: 'POST /api/assurance', purpose: 'ARC Assurance run and summary', source: 'ARC /v1/assurance/*' },
   { route: 'POST /api/reset', purpose: 'Reset Meridian fixtures (ARC audit kept)', source: 'company.mjs' },
   { route: 'GET /api/reports/integration | phase2', purpose: 'Saved reports/latest.json and reports/phase2-latest.json, redacted', source: 'company.mjs (filesystem)' },
+  { route: 'GET /api/suites, GET|POST /api/suites/:id/:check|all', purpose: 'Product-surface suite and industry packs (Northwind Bank)', source: 'product.mjs, packs/runner.mjs → ARC' },
+  { route: 'GET /api/coverage', purpose: 'Every ARC route and capability, and which check exercises it', source: 'coverage.mjs (reads ARC source)' },
+  { route: 'POST /hooks/arc', purpose: 'Sink for ARC webhook notifications, so delivery and signatures can be verified', source: 'company.mjs' },
   { route: 'GET /api/arc/evidence/:id', purpose: 'One ARC evidence record, fetched with the server-held operator token and redacted', source: 'ARC GET /v1/evidence/:id' },
 ]
 

@@ -40,9 +40,11 @@ const CATALOGUE = [
   { id: 'assurance-categories-not-collapsed', label: 'Assurance keeps non-pass results distinct from pass', family: 'governance', track: 'evidence', kind: 'implemented' },
   { id: 'cross-tenant-isolation', label: 'Cross-tenant record isolation', family: 'tenancy', track: 'security', kind: 'unsupported', reason: 'This ARC build has one organization in the sandbox store and no tenant boundary that refuses another organization\'s records.' },
   { id: 'external-anchor-persistence', label: 'Audit head stored outside ARC', family: 'evidence', track: 'evidence', kind: 'unsupported', reason: 'MemoryStore does not record an audit head, and nothing in this build writes that head to a store ARC does not control.' },
-  { id: 'sso-operator-identity', label: 'Operator SSO and individual credentials', family: 'identity', track: 'security', kind: 'unsupported', reason: 'Operator authentication is one shared bearer token. Identity and roles are request headers.' },
+  // ARC 2.1 added individual operator identity. The proxy-asserted mode is exercised here; OIDC needs an identity provider and is listed separately.
+  { id: 'sso-operator-identity', label: 'Operator identity asserted by a trusted proxy is attributed per person', family: 'identity', track: 'security', kind: 'implemented' },
+  { id: 'oidc-operator-sessions', label: 'Operators sign in through an OIDC provider', family: 'identity', track: 'security', kind: 'not_implemented', reason: 'ARC 2.1 supports OIDC sessions, but this harness runs no identity provider. Not run here.' },
   { id: 'network-segmentation', label: 'Network-level isolation of internal endpoints', family: 'connector', track: 'security', kind: 'unsupported', reason: 'The internal token check is application-level on loopback. This harness does not prove there is no other network path.' },
-  { id: 'mcp-drift-runtime-enforcement', label: 'Drift automatically suspends the affected tool', family: 'mcp', track: 'security', kind: 'unsupported', reason: 'detectDrift reports a changed manifest. The gateway does not pin a manifest onto a tool or refuse calls when that pin breaks.' },
+  { id: 'mcp-drift-runtime-enforcement', label: 'A rewritten MCP tool is refused at execution', family: 'mcp', track: 'security', kind: 'implemented' },
   { id: 'restart-mid-approval', label: 'Restart while an approval is pending', family: 'reliability', track: 'reliability', kind: 'not_implemented', reason: 'Not run here. It would stop the shared API process, and MemoryStore would drop the approval with it. The original integration scenarios are rechecked against this same process.' }
 ];
 
@@ -65,7 +67,7 @@ function allowPolicy(id, tool, agent) {
   };
 }
 
-export function createPhase2({ company, seeded, apiBase, operatorToken, arcRoot }) {
+export function createPhase2({ company, seeded, apiBase, operatorToken, arcRoot, gateway, trustedProxy }) {
   const request = async (url, { method = 'GET', headers = {}, body } = {}) => {
     const res = await fetch(url, { method, headers, ...(body === undefined ? {} : { body: JSON.stringify(body) }) });
     const raw = await res.text();
@@ -305,6 +307,81 @@ export function createPhase2({ company, seeded, apiBase, operatorToken, arcRoot 
       const added = mcp.detectDrift(pinned, { ...pinned, tools: [...pinned.tools, { name: 'ledger.export', description: 'Export the ledger.', inputSchema: schema }] });
       must(added.added.includes('ledger.export') && added.findings.some(finding => finding.id === 'MCP-SEC-031'), 'added tool was not reported');
       return { modified: drift.modified, added: added.added, runtimeEnforcement: false };
+    },
+    async 'sso-operator-identity'() {
+      must(trustedProxy, 'this ARC build was started without a trusted identity proxy (ARC 2.1+ option)');
+      const viaProxy = (path, body, headers) => request(`${apiBase}${path}`, {
+        method: body === undefined ? 'GET' : 'POST',
+        headers: { 'content-type': 'application/json', ...headers },
+        body
+      });
+      const proxied = (identity, groups, secret = trustedProxy.sharedSecret) => ({
+        [trustedProxy.secretHeader]: secret, [trustedProxy.identityHeader]: identity, [trustedProxy.rolesHeader]: groups
+      });
+      const before = count('finance.refund');
+      const held = await act('finance-agent', 'finance.refund', { customer: 'cus-101', amount: 1650 });
+      must(held.body?.outcome === 'pending_approval', `expected a held refund, got ${held.body?.outcome || held.httpStatus}`);
+      const id = held.body.approvalId;
+      const forged = await viaProxy(`/v1/approvals/${id}/vote`, { vote: 'approve' }, proxied('mallory@meridian.example', 'meridian-finance-managers', 'not-the-secret'));
+      must(forged.httpStatus === 401, `wrong proxy secret returned HTTP ${forged.httpStatus}`);
+      const unmapped = await viaProxy(`/v1/approvals/${id}/vote`, { vote: 'approve' }, proxied('casey@meridian.example', 'all-staff'));
+      must(unmapped.httpStatus === 403, `an unmapped group was allowed to vote (HTTP ${unmapped.httpStatus})`);
+      const vote = await viaProxy(`/v1/approvals/${id}/vote`, { vote: 'approve' }, proxied('Priya.Raman@meridian.example', 'meridian-finance-managers'));
+      must(vote.httpStatus === 200, `proxied vote HTTP ${vote.httpStatus} ${errorCode(vote) || ''}`);
+      const record = await op(`/v1/approvals/${id}`);
+      const cast = record.body?.votes || [];
+      must(cast.length === 1, `expected exactly one recorded vote, found ${cast.length}`);
+      must(cast[0].approver === 'priya.raman@meridian.example', `vote attributed to ${cast[0].approver}`);
+      must(cast[0].assurance === 'asserted_by_proxy', `vote assurance recorded as ${cast[0].assurance}`);
+      must(count('finance.refund') === before, 'voting alone executed a refund');
+      const tokenHeld = await act('finance-agent', 'finance.refund', { customer: 'cus-101', amount: 1650 });
+      await op(`/v1/approvals/${tokenHeld.body.approvalId}/vote`, { vote: 'approve' });
+      const tokenVote = (await op(`/v1/approvals/${tokenHeld.body.approvalId}`)).body?.votes?.[0];
+      must(tokenVote?.assurance === 'claimed', `shared-token vote recorded as ${tokenVote?.assurance}`);
+      return { forgedStatus: forged.httpStatus, unmappedStatus: unmapped.httpStatus, proxiedApprover: cast[0].approver, proxiedAssurance: cast[0].assurance, sharedTokenAssurance: tokenVote.assurance };
+    },
+    async 'mcp-drift-runtime-enforcement'() {
+      must(gateway, 'the Phase 2 runner was started without gateway access');
+      const load = (file) => import(pathToFileURL(join(arcRoot, file)).href);
+      const [{ McpConnector }, { createMockMcpServer }] = await Promise.all([
+        load('connectors/mcp/dist/index.js'),
+        load('examples/protected-mcp-server/mock-mcp-server.js')
+      ]);
+      const vendor = createMockMcpServer();
+      const port = await vendor.listen();
+      const suffix = randomUUID().slice(0, 8);
+      const connector = new McpConnector({ endpoint: `http://127.0.0.1:${port}/mcp`, name: `p2-mcp-${suffix}` });
+      let tool, policy;
+      try {
+        await connector.connect();
+        gateway.addConnector(connector);
+        const created = await op('/v1/tools', {
+          name: `p2vendor.search_docs_${suffix}`, description: 'Search the vendor documentation index.', system: `p2vendor${suffix}`,
+          effect: 'write', connector: connector.name, connectorConfig: { mcpTool: 'search_docs' },
+          parameters: [{ name: 'query', type: 'string', required: true }]
+        });
+        must(created.httpStatus === 201, `register MCP tool HTTP ${created.httpStatus}: ${created.body?.error?.message || ''}`);
+        tool = created.body;
+        const agent = await op('/v1/agents', { name: `p2-mcp-agent-${suffix}`, owner: 'research@meridian.example', roles: ['research'] });
+        const key = await op(`/v1/agents/${agent.body.id}/keys`, {});
+        must(key.httpStatus === 201, 'MCP probe agent key was not issued');
+        policy = await publish(allowPolicy(`MER-P2-MCP-${suffix}`, tool.name, agent.body.name));
+        const first = await agentCall(key.body.apiKey, tool.name, { query: 'rate limits' });
+        must(first.body?.outcome === 'executed', `reviewed MCP tool outcome ${first.body?.outcome || first.httpStatus}`);
+        vendor.poisonSearchDocs();
+        const second = await agentCall(key.body.apiKey, tool.name, { query: 'rate limits' });
+        must(second.body?.outcome !== 'executed', 'a rewritten MCP tool was executed');
+        must(second.body?.error?.code === 'manifest_drift', `refusal code was ${second.body?.error?.code || second.body?.outcome}`);
+        const evidence = second.body?.evidenceId ? await op(`/v1/evidence/${second.body.evidenceId}`) : null;
+        must(evidence?.body?.execution?.status === 'failed', `drift refusal evidence execution status ${evidence?.body?.execution?.status}`);
+        return { firstOutcome: first.body.outcome, afterRewrite: second.body.outcome, code: second.body.error.code, evidenceId: second.body.evidenceId };
+      } finally {
+        if (tool) await op(`/v1/tools/${tool.id}/disable`, { reason: 'phase 2 cleanup' });
+        if (policy) await policy.disable();
+        // The mock vendor is left running on purpose. ARC cannot remove a
+        // connector, and an unreachable one marks /health/enforcement degraded
+        // (503) for the whole gateway even when its only tool is disabled.
+      }
     },
     async 'mcp-plaintext-endpoint'() {
       const report = await op('/v1/mcp/scan', { ...benignManifest(), name: 'plaintext-books', endpoint: 'http://mcp.example.com/rpc' });

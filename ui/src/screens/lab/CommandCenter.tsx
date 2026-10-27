@@ -12,7 +12,7 @@ import { ReportImport } from '../../components/lab/ReportImport'
 import { useReports } from '../../api/ReportsProvider'
 import { BASELINE_NOTE, integrationBaseline, phase2Baseline } from '../../data/baseline'
 import { usePhase2 } from '../../lib/phase2'
-import { STAGE_LABEL, useFindingStates, useUnmappedFailures } from '../../lib/findings'
+import { stageText, useFindingStates, useUnmappedFailures } from '../../lib/findings'
 import type { DataSource } from '../../api/types'
 import { ORIGINAL } from '../../data/catalog'
 import { ENDPOINTS } from '../../data/registry'
@@ -156,7 +156,7 @@ export function CommandCenter() {
                     <div className="flex items-center gap-2">
                       <span className="rounded bg-critical px-1.5 py-px text-[10.5px] font-semibold uppercase text-white">{f.severity}</span>
                       <span className="font-mono text-[12px] text-ink">{f.id}</span>
-                      <span className={`ml-auto text-[11.5px] ${st.stage === 'open' ? 'text-critical-ink' : 'text-warning-ink'}`}>{STAGE_LABEL[st.stage]}</span>
+                      <span className={`ml-auto text-[11.5px] ${stageText(st).tone}`}>{stageText(st).label}</span>
                     </div>
                     <div className="mt-1.5 text-[13.5px] font-medium text-ink">{f.title}</div>
                     <p className="mt-0.5 text-[12.5px] leading-relaxed text-muted">{f.summary}</p>
@@ -174,7 +174,7 @@ export function CommandCenter() {
             })}
           </ul>
           <div className="border-t border-line px-4 py-3 text-[12px] text-muted">
-            A passing check does not close a finding; the ARC fix needs an independent retest. <Link to="/lab/findings" className="font-medium text-teal-ink hover:underline">Findings center →</Link>
+            Resolved means a recorded fix plus an independent retest; a later failure reopens it. <Link to="/lab/findings" className="font-medium text-teal-ink hover:underline">Findings center →</Link>
           </div>
         </Section>
       </div>

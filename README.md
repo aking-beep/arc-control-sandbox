@@ -7,7 +7,8 @@ Meridian is a fictional company with six operational departments, a real in-proc
 ## Current verification level
 
 - Verified here: local backend unit tests (`npm test`), including refusal of unauthenticated direct writes, fault-endpoint isolation, the UI's server routes, and a check that browser source carries no credentials.
-- Latest run against ARC Control `162d00d` (26 Oct 2026, `docs/VALIDATION_LAB.md`): 17/17 integration; Phase 2 30 pass, **3 fail**, 5 unsupported, 1 not implemented; stress 9/9. The earlier `aa2f37c` run (2 fail) is in `docs/PHASE_2_READINESS.md`.
+- Latest whole-product run against ARC Control `main` `887dd2f` (27 Oct 2026, `docs/PRODUCT_HARNESS.md`): 17/17 integration; Phase 2 35 pass, 0 fail, 3 unsupported, 2 not implemented; stress 9/9; product surface 22 pass; Northwind Bank 13 pass; 76/76 ARC routes covered or stated as gaps. The three earlier findings are fixed on `main` and independently retested.
+- **Clone `arc-control` at `main`.** Its GitHub default branch is an old branch (`162d00d`); results measured there are out of date.
 - **Not verified here:** actual end-to-end integration against a built checkout of ARC Control; ARC packages are not in this archive. The integration adapter is based on source inspected from the GitHub repository and needs a real integration run.
 - Never interpret a UI badge as proof without the observed effects and evidence. The scenarios assert these whenever ARC has made a decision.
 
@@ -107,13 +108,16 @@ npm run ui:install   # install the Validation Lab UI dependencies (ui/ only)
 npm run ui:typecheck # tsc --noEmit over ui/src
 npm run ui:build     # type check + production build into ui/dist, served by npm start on :8890
 npm run ui:dev       # Vite dev server on http://127.0.0.1:5173, proxying /api to :8890
+npm run product      # whole product: 17, Phase 2, stress, product surface, Northwind Bank, coverage
+npm run coverage     # ARC route and capability map from ARC source (--strict fails on unmapped routes)
+npm run showcase     # read-only static page from the last product run
 ```
 
-`npm run phase2` exits non-zero while any Phase 2 check fails. Against ARC `162d00d` three do (`concurrent-idempotency`, `policy-change-before-release`, `retired-agent-final`); that exit code is the result, not a broken runner.
+`npm run phase2` and `npm run product` exit non-zero while any implemented check fails; that exit code is the result, not a broken runner. On ARC `main` `887dd2f` both exit 0. See [`docs/PRODUCT_HARNESS.md`](docs/PRODUCT_HARNESS.md) for the suites, industry packs, CI and hosting.
 
 ## Meridian Validation Lab UI
 
-`ui/` is the Magic Patterns redesign, integrated as a separate package so the backend keeps zero runtime dependencies. It talks only to same-origin `/api/*` on the Meridian server; it never calls ARC directly and never holds the operator token, agent keys or the connector token. Every figure on screen carries its source: LIVE (this server), RECORDED (`reports/*.json`), BASELINE (`docs/PHASE_2_READINESS.md`), REPO (source code) or ILLUSTRATIVE. Unsupported and not-implemented checks are never counted as passes; the security findings stay listed until the ARC fix is independently retested, and any failing Phase 2 check without a finding is listed too. Details, the endpoint map and known gaps: [`docs/VALIDATION_LAB.md`](docs/VALIDATION_LAB.md).
+`ui/` is the Magic Patterns redesign, integrated as a separate package so the backend keeps zero runtime dependencies. It talks only to same-origin `/api/*` on the Meridian server; it never calls ARC directly and never holds the operator token, agent keys or the connector token. Every figure on screen carries its source: LIVE (this server), RECORDED (`reports/*.json`), BASELINE (`docs/PHASE_2_READINESS.md`), REPO (source code) or ILLUSTRATIVE. Unsupported and not-implemented checks are never counted as passes. Findings are resolved only with a recorded fix and an independent retest, stay listed, and show as regressions if their check fails again; any failing Phase 2 check without a finding is listed too. **Suites & Industry Packs** runs the product-surface suite and the Northwind Bank pack, and **Product Coverage** maps every ARC route and capability to the check that exercises it. Details, the endpoint map and known gaps: [`docs/VALIDATION_LAB.md`](docs/VALIDATION_LAB.md).
 
 Phase 2 is a separate catalogue. It does not replace the 17 integration scenarios. `reports/phase2-latest.json` records passes, failures, unsupported product gaps, and not-implemented checks. A green sandbox run is not an enterprise certification.
 

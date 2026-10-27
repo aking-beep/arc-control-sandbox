@@ -1,0 +1,23 @@
+# Every request needs a login before it reaches the lab. /hooks/* and
+# /internal/* are only called by ARC inside the container, so they are refused
+# at the edge (the internal routes also require the connector token).
+{$LAB_DOMAIN} {
+	@container_only path /hooks/* /internal/*
+	respond @container_only 404
+	basic_auth {
+		{$LAB_USER} {$LAB_PASSWORD_HASH}
+	}
+	header {
+		Strict-Transport-Security "max-age=31536000"
+		X-Frame-Options "DENY"
+		Referrer-Policy "no-referrer"
+	}
+	reverse_proxy lab:8890
+}
+
+{$CONSOLE_DOMAIN} {
+	basic_auth {
+		{$LAB_USER} {$LAB_PASSWORD_HASH}
+	}
+	reverse_proxy lab:8788
+}

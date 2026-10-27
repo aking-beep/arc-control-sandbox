@@ -277,7 +277,7 @@ export interface Phase2Report {
 
 /** GET /api/reports/:kind — a saved report file, redacted server-side. */
 export interface SavedReport<T> {
-  kind: 'integration' | 'phase2'
+  kind: 'integration' | 'phase2' | 'product'
   file: string
   /** null when the runner has not written the file yet */
   modifiedAt: string | null
@@ -290,6 +290,65 @@ export interface EvidenceResponse {
   arcHttpStatus: number
   record?: unknown
   error?: string
+}
+
+/* ── Product suites and coverage (product.mjs, packs/, coverage.mjs) ── */
+
+/** GET /api/suites entry */
+export interface SuiteSummary {
+  id: string
+  name: string
+  kind: 'product' | 'pack'
+  industry: string | null
+  description: string | null
+  count: number
+}
+
+/** A product-surface or industry-pack check, and its run result. */
+export interface SuiteSpec {
+  id: string
+  label: string
+  family: string
+  kind: 'implemented' | 'unsupported' | 'not_implemented'
+  expected?: string
+  reason?: string
+  covers?: string[]
+}
+export interface SuiteRun extends SuiteSpec {
+  status: 'pass' | 'fail' | 'unsupported' | 'not_implemented'
+  pass: boolean | null
+  observed?: unknown
+  error?: string
+  detail?: string
+  elapsedMs?: number
+  at?: string
+}
+export interface SuiteResponse { id: string; name: string; kind: string; scenarios: SuiteSpec[]; runs: SuiteRun[] }
+
+export type CoverageStatus = 'verified' | 'failing' | 'not_run' | 'gap' | 'unmapped' | 'partial' | 'unsupported' | 'not_implemented'
+export interface CoverageRow { route: string; status: CoverageStatus; checks: Array<{ ref: string; status: string }>; reason?: string }
+export interface CapabilityRow { id: string; label: string; status: CoverageStatus; checks: Array<{ ref: string; status: string }>; reason?: string }
+/** GET /api/coverage, and product-latest.json → coverage */
+export interface CoverageReport {
+  generatedAt: string
+  arcRoutes: number
+  routes: CoverageRow[]
+  routeTotals: Partial<Record<CoverageStatus, number>>
+  capabilities: CapabilityRow[]
+  capabilityTotals: Partial<Record<CoverageStatus, number>>
+  unmapped: string[]
+  note: string
+}
+
+/** product-report.mjs output — reports/product-latest.json (fields the UI reads) */
+export interface ProductReport {
+  generatedAt: string
+  runner: 'arc-control-sandbox-product'
+  revisions: { sandbox: string | null; arcControl: string | null }
+  pass: boolean
+  failures: string[]
+  coverage: CoverageReport
+  suites: Record<string, unknown>
 }
 
 /* ── UI-side vocabulary ─────────────────────────────────────────────── */

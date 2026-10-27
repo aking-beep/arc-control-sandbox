@@ -7,7 +7,7 @@ import { redact } from './redact.mjs';
 
 const root = dirname(dirname(fileURLToPath(import.meta.url)));
 // Saved runner output. Read-only here; npm run validate / npm run phase2 write it.
-const REPORT_FILES = { integration: 'latest.json', phase2: 'phase2-latest.json' };
+const REPORT_FILES = { integration: 'latest.json', phase2: 'phase2-latest.json', product: 'product-latest.json' };
 const MEDIA = { '.html': 'text/html; charset=utf-8', '.js': 'text/javascript; charset=utf-8', '.css': 'text/css; charset=utf-8', '.svg': 'image/svg+xml', '.png': 'image/png', '.ico': 'image/x-icon', '.woff2': 'font/woff2', '.json': 'application/json; charset=utf-8' };
 const initial = () => ({
   customers: [{ id: 'cus-101', name: 'Aster Logistics', tier: 'Enterprise' }, { id: 'cus-102', name: 'Nova Supply', tier: 'Growth' }],
@@ -20,10 +20,16 @@ const initial = () => ({
   faultEffects: []
 });
 
-export function createCompany({ executionToken, getHarness, port = 8890, host = '127.0.0.1', reportsDir = join(root, 'reports'), uiDir = join(root, 'ui', 'dist') }) {
-  let state = initial();
+export function createCompany({ executionToken, getHarness, port = 8890, host = '127.0.0.1', reportsDir = join(root, 'reports'), uiDir = join(root, 'ui', 'dist'), packs = [] }) {
+  // Industry packs keep their own records under state.packs[id]; their effects
+  // land in the same mutation log, so every suite is reconciled the same way.
+  const fresh = () => ({ ...initial(), packs: Object.fromEntries(packs.map(pack => [pack.id, pack.initial()])) });
+  let state = fresh();
   const runs = [];
   const phase2Runs = [];
+  const suiteRuns = {};
+  // ARC notification deliveries received at /hooks/arc, kept raw so a check can verify the signature.
+  const hooks = [];
   const equal = (a, b) => {
     const x = Buffer.from(String(a ?? ''));
     const y = Buffer.from(String(b ?? ''));
@@ -73,7 +79,11 @@ export function createCompany({ executionToken, getHarness, port = 8890, host = 
         result = { id: `q-${state.quarantines.length + 1}`, resource: data.resource, reason: data.reason };
         state.quarantines.push(result); break;
       }
-      default: throw new Error('unknown internal tool');
+      default: {
+        const pack = packs.find(item => item.tools.some(tool => tool.name === name));
+        if (!pack) throw new Error('unknown internal tool');
+        result = pack.apply(name, data, state.packs[pack.id]);
+      }
     }
     state.mutationLog.push({ tool: name, parameters: data, at: new Date().toISOString() });
     return result;
@@ -110,6 +120,13 @@ export function createCompany({ executionToken, getHarness, port = 8890, host = 
     try {
       const url = new URL(req.url || '/', `http://${host}:${port}`);
       const path = url.pathname;
+      if (path === '/hooks/arc' && req.method === 'POST') {
+        let raw = '';
+        for await (const chunk of req) { raw += chunk; if (raw.length > 65536) throw new Error('request body too large'); }
+        hooks.push({ at: new Date().toISOString(), signature: req.headers['x-arc-signature'] || null, raw });
+        if (hooks.length > 200) hooks.shift();
+        return json(res, 202, { received: true });
+      }
       if (path.startsWith('/internal/')) {
         if (req.method !== 'POST') return json(res, 405, { error: 'method_not_allowed' });
         if (!equal(req.headers['x-meridian-connector-token'], executionToken)) return json(res, 403, { error: 'connector_token_required' });
@@ -164,7 +181,7 @@ export function createCompany({ executionToken, getHarness, port = 8890, host = 
         return json(res,200,result);
       }
       if (req.method === 'POST' && path === '/api/reset') {
-        state = initial(); runs.length = 0; phase2Runs.length = 0; return json(res, 200, { reset: true, note: 'Business fixtures reset; ARC audit history intentionally preserved.' });
+        state = fresh(); runs.length = 0; phase2Runs.length = 0; for (const key of Object.keys(suiteRuns)) delete suiteRuns[key]; return json(res, 200, { reset: true, note: 'Business fixtures reset; ARC audit history intentionally preserved.' });
       }
       if (req.method === 'POST' && path.startsWith('/api/phase2/')) {
         const harness = getHarness();
@@ -175,6 +192,28 @@ export function createCompany({ executionToken, getHarness, port = 8890, host = 
         else if (result?.scenarios) phase2Runs.push(...result.scenarios);
         else phase2Runs.push(result);
         return json(res, 200, result);
+      }
+      if (req.method === 'GET' && path === '/api/coverage') {
+        const harness = getHarness();
+        if (!harness?.coverage) return json(res, 503, { error: 'ARC Control not initialized' });
+        return json(res, 200, await harness.coverage({ integration: runs, phase2: phase2Runs, ...suiteRuns }));
+      }
+      // Suites added after Phase 2 (product surface, industry packs) share one shape.
+      if (path === '/api/suites' && req.method === 'GET') {
+        const suites = getHarness()?.suites || {};
+        return json(res, 200, { suites: Object.values(suites).map(suite => ({ id: suite.id, name: suite.name, kind: suite.kind, industry: suite.industry || null, description: suite.description || null, count: suite.list().length })) });
+      }
+      if (path.startsWith('/api/suites/')) {
+        const [suiteId, checkId] = path.slice('/api/suites/'.length).split('/').map(decodeURIComponent);
+        const suite = getHarness()?.suites?.[suiteId];
+        if (!suite) return json(res, getHarness() ? 404 : 503, { error: getHarness() ? 'unknown_suite' : 'ARC Control not initialized' });
+        if (req.method === 'GET' && !checkId) return json(res, 200, { id: suite.id, name: suite.name, kind: suite.kind, scenarios: suite.list(), runs: (suiteRuns[suiteId] || []).slice(-100) });
+        if (req.method === 'POST' && checkId) {
+          const result = checkId === 'all' ? await suite.all() : await suite.run(checkId);
+          (suiteRuns[suiteId] ||= []).push(...(Array.isArray(result) ? result : [result]));
+          return json(res, 200, result);
+        }
+        return json(res, 405, { error: 'method_not_allowed' });
       }
       if (req.method === 'POST' && path.startsWith('/api/scenarios/')) {
         const harness = getHarness();
@@ -208,9 +247,10 @@ export function createCompany({ executionToken, getHarness, port = 8890, host = 
   });
   return {
     server, state: () => structuredClone(state), runs,
-    resetBusiness: () => { state = initial(); },
+    resetBusiness: () => { state = fresh(); },
     apply,
     faultLog: () => state.faultLog.length,
+    hooks: () => hooks.slice(),
     faultEffects: () => state.faultEffects.length,
     listen: () => new Promise((resolve, reject) => {
       server.once('error', reject);

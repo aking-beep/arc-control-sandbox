@@ -17,6 +17,8 @@ import { PolicyAnalysis } from './screens/lab/PolicyAnalysis'
 import { Assurance } from './screens/lab/Assurance'
 import { Evidence } from './screens/lab/Evidence'
 import { Reports } from './screens/lab/Reports'
+import { Suites } from './screens/lab/Suites'
+import { Coverage } from './screens/lab/Coverage'
 import { CompanyWebsite } from './screens/enterprise/CompanyWebsite'
 import { EnterpriseOverview } from './screens/enterprise/EnterpriseOverview'
 import { DepartmentScreen } from './screens/enterprise/DepartmentScreen'
@@ -46,6 +48,8 @@ export function App() {
               <Route path="lab/assurance" element={<Assurance />} />
               <Route path="lab/evidence" element={<Evidence />} />
               <Route path="lab/reports" element={<Reports />} />
+              <Route path="lab/suites" element={<Suites />} />
+              <Route path="lab/coverage" element={<Coverage />} />
               <Route path="company" element={<CompanyWebsite />} />
               <Route path="enterprise" element={<EnterpriseOverview />} />
               <Route path="enterprise/:dept" element={<DepartmentScreen />} />

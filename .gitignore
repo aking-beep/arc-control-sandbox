@@ -4,3 +4,5 @@ reports/
 .env.*
 *.log
 ui/dist/
+stack.log
+showcase/

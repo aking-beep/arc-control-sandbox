@@ -42,9 +42,9 @@ export const PHASE2_CATALOG: Phase2Spec[] = [
   { id: 'assurance-categories-not-collapsed', label: 'Assurance keeps non-pass results distinct from pass', family: 'governance', track: 'evidence', kind: 'implemented' },
   { id: 'cross-tenant-isolation', label: 'Cross-tenant record isolation', family: 'tenancy', track: 'security', kind: 'unsupported', reason: "This ARC build has one organization in the sandbox store and no tenant boundary that refuses another organization's records." },
   { id: 'external-anchor-persistence', label: 'Audit head stored outside ARC', family: 'evidence', track: 'evidence', kind: 'unsupported', reason: 'MemoryStore does not record an audit head, and nothing in this build writes that head to a store ARC does not control.' },
-  { id: 'sso-operator-identity', label: 'Operator SSO and individual credentials', family: 'identity', track: 'security', kind: 'unsupported', reason: 'Operator authentication is one shared bearer token. Identity and roles are request headers.' },
+  { id: 'sso-operator-identity', label: 'Operator identity asserted by a trusted proxy is attributed per person', family: 'identity', track: 'security', kind: 'implemented' },
+  { id: 'oidc-operator-sessions', label: 'Operators sign in through an OIDC provider', family: 'identity', track: 'security', kind: 'not_implemented', reason: 'ARC 2.1 supports OIDC sessions, but this harness runs no identity provider. Not run here.' },
   { id: 'network-segmentation', label: 'Network-level isolation of internal endpoints', family: 'connector', track: 'security', kind: 'unsupported', reason: 'The internal token check is application-level on loopback. This harness does not prove there is no other network path.' },
-  { id: 'mcp-drift-runtime-enforcement', label: 'Drift automatically suspends the affected tool', family: 'mcp', track: 'security', kind: 'unsupported', reason: 'detectDrift reports a changed manifest. The gateway does not pin a manifest onto a tool or refuse calls when that pin breaks.' },
+  { id: 'mcp-drift-runtime-enforcement', label: 'A rewritten MCP tool is refused at execution', family: 'mcp', track: 'security', kind: 'implemented' },
   { id: 'restart-mid-approval', label: 'Restart while an approval is pending', family: 'reliability', track: 'reliability', kind: 'not_implemented', reason: 'Not run here. It would stop the shared API process, and MemoryStore would drop the approval with it. The original integration scenarios are rechecked against this same process.' },
 ]
-
