@@ -98,3 +98,29 @@ jobs:
             arc-control-sandbox/reports/*.json
             arc-control-sandbox/stack.log
           if-no-files-found: warn
+
+  hosted:
+    name: Hosted environment (Docker + gate)
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    env:
+      ARC_REF: ${{ github.event.client_payload.ref || inputs.arc_ref || 'main' }}
+    steps:
+      - uses: actions/checkout@v4
+
+      # Build from a commit, not a moving branch name, so the report names it.
+      - name: Resolve the ARC commit
+        run: |
+          sha="$(git ls-remote https://github.com/aking-beep/arc-control.git "refs/heads/$ARC_REF" "refs/tags/$ARC_REF" | head -1 | cut -f1)"
+          echo "ARC_REF=${sha:-$ARC_REF}" >> "$GITHUB_ENV"
+
+      - name: Build, bring up behind the gate, check it, run the harness inside
+        run: bash deploy/smoke.sh
+
+      - name: Upload report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: arc-hosted-report-${{ env.ARC_REF }}
+          path: reports/product-docker.json
+          if-no-files-found: warn

@@ -56,7 +56,7 @@ The run recorded on 26 Oct against ARC `162d00d` (3 Phase 2 failures, one called
 | --- | --- | --- | --- |
 | ARC-SEC-001 concurrent idempotency | `concurrent-idempotency` | resolved: 5 rounds × 8 parallel → 1 refund each | arc-control#11 (issue #13 closed) |
 | ARC-SEC-002 release ignores current policy | `policy-change-before-release` | resolved: release denied, 0 refunds | arc-control#11 (issue #14 closed) |
-| ARC-SEC-003 retired agent reactivated | `retired-agent-final`, `product:retired-agent-resume-refused` | resolved at the API: activate and resume → 409 | aa2f37c; `registry.resume()` hardening in arc-control#16 (issue #15) |
+| ARC-SEC-003 retired agent reactivated | `retired-agent-final`, `product:retired-agent-resume-refused` | resolved at the API: activate and resume → 409 | aa2f37c; registry hardening in arc-control#12, open (issue #15; #16 closed as superseded) |
 
 All three were retested independently: once by a separate agent on unmodified harness code, and again by this product run. They stay listed in the Lab as resolved, with that evidence. If a check fails again, the finding shows as a regression.
 
@@ -71,7 +71,7 @@ Two Phase 2 entries were static `unsupported` labels that `main` had overtaken. 
 
 ### New product finding
 
-[arc-control#17](https://github.com/aking-beep/arc-control/issues/17): one unreachable MCP connector makes `GET /health/enforcement` return 503 for the whole gateway, even when every tool on it is disabled, and there is no way to remove a connector. Used as a load-balancer probe, one vendor outage would take a healthy instance out of rotation. `product:health-enforcement-separate` asserts today's documented contract until the behaviour is decided.
+[arc-control#17](https://github.com/aking-beep/arc-control/issues/17): one unreachable MCP connector makes `GET /health/enforcement` return 503 for the whole gateway, even when every tool on it is disabled, and there is no way to remove a connector. Used as a load-balancer probe, one vendor outage would take a healthy instance out of rotation. The fix (arc-control PR for #17) counts a connector only while an enabled tool routes to it, and reports `inService` per connector. `product:health-enforcement-separate` asserts whichever contract the ARC build declares, strictly: before #17, 200 only when every connector is healthy; from #17, 200 only when every in-service connector is healthy, with `inService` recomputed from `GET /v1/tools` rather than taken from ARC. The check failed against the #17 build until it was updated, and passes against both builds now.
 
 ## Industry packs
 
@@ -95,7 +95,7 @@ What Northwind showed about ARC:
 
 ## CI
 
-- **This repository:** `.github/workflows/arc-integration.yml` runs on push to `main`, on pull requests, nightly at 06:17 UTC, on demand (`arc_ref` input), and on `repository_dispatch` (`arc-control-updated`). It builds ARC at the given ref (default `main`, never the default branch), then runs `npm test`, the UI build, `npm run coverage -- --strict`, the stack and `npm run product`, and uploads the reports.
+- **This repository:** `.github/workflows/arc-integration.yml` runs on push to `main`, on pull requests, nightly at 06:17 UTC, on demand (`arc_ref` input), and on `repository_dispatch` (`arc-control-updated`). It builds ARC at the given ref (default `main`, never the default branch), then runs `npm test`, the UI build, `npm run coverage -- --strict`, the stack and `npm run product`, and uploads the reports. A second job, `hosted`, builds the Docker image, brings it up behind the Caddy gate and runs `deploy/smoke.sh`.
 - **arc-control:** `.github/workflows/sandbox.yaml` (PR `claude/sandbox-harness-ci`) runs the same harness from this repository's `main` against every ARC pull request. It needs this repository's product harness on `main` first.
 
 `repository_dispatch` from arc-control to here needs a token with access to this repository, stored as an arc-control secret. It is not configured. Until it is, the nightly run and the arc-control workflow cover ARC changes.
@@ -103,7 +103,7 @@ What Northwind showed about ARC:
 ## Hosting
 
 - **Read-only showcase:** `npm run showcase` builds a static page from the last product run. It has no API calls and no controls, and is safe to host anywhere.
-- **Private test environment:** `deploy/` (see `deploy/README.md`). One container with a pinned ARC ref, behind an authenticating Caddy proxy. The ARC API is never published. `/hooks/*` is refused at the edge. The servers bind beyond loopback only with `SANDBOX_ALLOW_REMOTE_BIND=1`.
+- **Private test environment:** `deploy/` (see `deploy/README.md`). One container with a pinned ARC ref, behind an authenticating Caddy proxy. The ARC API is never published. `/hooks/*` is refused at the edge. The servers bind beyond loopback only with `SANDBOX_ALLOW_REMOTE_BIND=1`. Built and brought up on 27 Oct 2026: `deploy/smoke.sh` checks the gate (12 checks) and runs the whole harness inside the container, and the `hosted` CI job runs it on every change.
 - **Not built yet:** splitting ARC and Meridian into separate containers on separate networks. That is what makes the network-segmentation capability testable; today they share one process.
 
 ## Remaining gaps
@@ -112,5 +112,5 @@ What Northwind showed about ARC:
 2. OIDC sign-in is not exercised (`/auth/*` and `/v1/operator-sessions*` are stated gaps).
 3. Editing or resolving assurance findings is deliberately not exercised.
 4. Route coverage for the 17, Phase 2 and pack runners is per suite (read from runner source); product checks declare routes per check.
-5. The Docker image was not built in this environment (no Docker daemon). The compose file and Caddyfile are untested.
+5. The hosted environment is verified locally behind loopback (`deploy/smoke.sh`, also in CI), but TLS with a real public domain has not been exercised.
 6. Cumulative amount limits and approval delegation need ARC product work before they can be tested.

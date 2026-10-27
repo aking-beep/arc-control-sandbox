@@ -8,7 +8,7 @@ import { mkdir, readFile, writeFile } from 'node:fs/promises';
 const FINDINGS = [
   { id: 'ARC-SEC-001', check: 'concurrent-idempotency', title: 'Concurrent requests with one idempotency key each executed', fix: 'arc-control#11', first: 'aa2f37c: 8 refunds for one key' },
   { id: 'ARC-SEC-002', check: 'policy-change-before-release', title: 'Approval release ignored a newly published deny policy', fix: 'arc-control#11', first: 'aa2f37c: released and executed' },
-  { id: 'ARC-SEC-003', check: 'retired-agent-final', title: 'A retired agent could be reactivated', fix: 'arc-control#9 (routes), #16 (hardening)', first: '162d00d, a stale default branch: activate returned 200' }
+  { id: 'ARC-SEC-003', check: 'retired-agent-final', title: 'A retired agent could be reactivated', fix: 'arc-control#9 (routes); #12 (registry hardening, open)', first: '162d00d, a stale default branch: activate returned 200' }
 ];
 
 const esc = value => String(value ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]);

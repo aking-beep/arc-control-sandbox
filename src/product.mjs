@@ -13,7 +13,7 @@ const sleep = ms => new Promise(resolve => setTimeout(resolve, ms));
  * build the product coverage map, so it must stay truthful.
  */
 export const PRODUCT_CATALOGUE = [
-  { id: 'health-enforcement-separate', label: 'Enforcement health is reported apart from assurance', family: 'operations', kind: 'implemented', covers: ['GET /health', 'GET /health/enforcement', 'GET /health/ready'] },
+  { id: 'health-enforcement-separate', label: 'Enforcement health is reported apart from assurance', family: 'operations', kind: 'implemented', covers: ['GET /health', 'GET /health/enforcement', 'GET /health/ready', 'GET /v1/tools'] },
   { id: 'explain-does-not-execute', label: 'Explain returns the decision without executing', family: 'authorization', kind: 'implemented', covers: ['POST /v1/actions/explain'] },
   { id: 'decision-record-readable', label: 'Evidence keeps the caller’s correlation id and links its decision', family: 'evidence', kind: 'implemented', covers: ['GET /v1/decisions/:id', 'GET /v1/evidence/:id'] },
   { id: 'evidence-list-filters', label: 'Evidence can be listed per agent and outcome', family: 'evidence', kind: 'implemented', covers: ['GET /v1/evidence'] },
@@ -91,12 +91,32 @@ export function createProduct({ company, seeded, apiBase, operatorToken, webhook
       must(health.body.assurance.enforcementDependsOnAssurance === false, 'health claims enforcement depends on assurance');
       must(enforcement.body?.failureMode === 'closed', `enforcement failure mode is ${enforcement.body?.failureMode}`);
       must(!('assurance' in enforcement.body), 'enforcement health includes assurance');
-      // Contract: 200 only when every connector is healthy, 503 naming the unhealthy ones otherwise.
-      const unhealthy = (enforcement.body.connectors || []).filter(c => c.healthy === false).map(c => c.name);
-      must(enforcement.httpStatus === (unhealthy.length ? 503 : 200), `enforcement HTTP ${enforcement.httpStatus} with ${unhealthy.length} unhealthy connector(s)`);
+      const connectors = enforcement.body.connectors || [];
+      const unhealthy = connectors.filter(c => c.healthy === false).map(c => c.name);
+      // Two contracts, each asserted strictly for the ARC build that declares it.
+      // Before arc-control#17: 200 only when every connector is healthy.
+      // From #17: connectors report `inService` (an enabled tool routes to them),
+      // and only an unhealthy in-service connector makes the probe 503. The
+      // harness does not take ARC's word for `inService`: it recomputes it from
+      // the tool registry.
+      const declaresInService = connectors.length > 0 && connectors.every(c => typeof c.inService === 'boolean');
+      let contract = 'every-connector';
+      let blocking = unhealthy;
+      if (declaresInService) {
+        contract = 'in-service-connectors';
+        const tools = await op('/v1/tools');
+        ok(tools, 'GET /v1/tools');
+        const list = Array.isArray(tools.body) ? tools.body : tools.body.tools || [];
+        const serving = new Set(list.filter(tool => tool.disabled !== true).map(tool => tool.connector));
+        for (const c of connectors) must(c.inService === serving.has(c.name), `connector ${c.name} reports inService=${c.inService}, but ${serving.has(c.name) ? 'an enabled tool uses it' : 'no enabled tool uses it'}`);
+        blocking = connectors.filter(c => c.inService && c.healthy === false).map(c => c.name);
+      } else {
+        must(connectors.every(c => !('inService' in c)), 'some connectors report inService and some do not');
+      }
+      must(enforcement.httpStatus === (blocking.length ? 503 : 200), `enforcement HTTP ${enforcement.httpStatus} with ${blocking.length} unhealthy connector(s) counted (${contract})`);
       must(unhealthy.includes('meridian-http') === false, 'the Meridian connector is unhealthy');
       must(ready.httpStatus === 200 || ready.httpStatus === 503, `GET /health/ready returned HTTP ${ready.httpStatus}`);
-      return { status: health.body.status, enforcementStatus: enforcement.httpStatus, unhealthyConnectors: unhealthy, ready: ready.body?.status ?? ready.httpStatus, rateLimiting: health.body.enforcement.rateLimiting, failureMode: enforcement.body.failureMode };
+      return { contract, status: health.body.status, enforcementStatus: enforcement.httpStatus, unhealthyConnectors: unhealthy, blockingConnectors: blocking, ready: ready.body?.status ?? ready.httpStatus, rateLimiting: health.body.enforcement.rateLimiting, failureMode: enforcement.body.failureMode };
     },
     async 'explain-does-not-execute'() {
       const before = effects();
