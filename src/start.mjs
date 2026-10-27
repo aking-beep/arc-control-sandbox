@@ -4,6 +4,7 @@ import { randomBytes } from 'node:crypto';
 import { access } from 'node:fs/promises';
 import { createCompany } from './company.mjs';
 import { createScenarios } from './scenarios.mjs';
+import { createPhase2 } from './phase2.mjs';
 
 // ARC remains a sibling checkout, independently versioned. This harness uses
 // its public exported packages; no changes to arc-control source are required.
@@ -93,7 +94,10 @@ try {
   await arc.listen(apiPort, host);
   const consoleApp = createConsole({ apiBase: `http://${host}:${apiPort}`, operatorToken, operatorIdentity: 'meridian-controller@example.com', operatorRoles: ['finance-manager', 'hr-manager', 'security-manager'] });
   await consoleApp.listen(consolePort, host);
-  harness = { arc, consoleApp, seeded, scenarios: createScenarios({ company, seeded, apiBase: `http://${host}:${apiPort}`, operatorToken }) };
+  const apiBase = `http://${host}:${apiPort}`;
+  const scenarios = createScenarios({ company, seeded, apiBase, operatorToken });
+  const phase2 = createPhase2({ company, seeded, apiBase, operatorToken, arcRoot });
+  harness = { arc, consoleApp, seeded, scenarios, phase2 };
   console.log(`\nMERIDIAN COMMERCE SYNTHETIC ENTERPRISE`);
   console.log(`  Company UI:       http://${host}:${port}`);
   console.log(`  ARC Control API:  http://${host}:${apiPort}`);

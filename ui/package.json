@@ -1,0 +1,29 @@
+{
+  "name": "meridian-validation-lab-ui",
+  "private": true,
+  "type": "module",
+  "description": "Meridian Enterprise Validation Lab — React UI over the arc-control-sandbox /api/* routes. Holds no credentials.",
+  "scripts": {
+    "dev": "vite",
+    "typecheck": "tsc --noEmit -p tsconfig.json",
+    "build": "tsc --noEmit -p tsconfig.json && vite build",
+    "preview": "vite preview"
+  },
+  "dependencies": {
+    "date-fns": "4.1.0",
+    "framer-motion": "11.18.2",
+    "lucide-react": "0.577.0",
+    "react": "18.3.1",
+    "react-dom": "18.3.1",
+    "react-router-dom": "6.30.6"
+  },
+  "devDependencies": {
+    "@tailwindcss/vite": "4.3.1",
+    "@types/react": "18.3.12",
+    "@types/react-dom": "18.3.1",
+    "@vitejs/plugin-react": "6.1.1",
+    "tailwindcss": "4.3.1",
+    "typescript": "5.9.3",
+    "vite": "8.3.4"
+  }
+}

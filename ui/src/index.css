@@ -1,0 +1,66 @@
+/* @import url() FONT IMPORTS MUST ALWAYS BE AT THE VERY TOP OF THIS FILE, ABOVE THE TAILWIND IMPORT — DO NOT DELETE THIS COMMENT */
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Geist+Mono:wght@400;500;600&display=swap');
+
+/* CRITICAL: THE FOLLOWING TAILWIND IMPORT MUST NEVER BE DELETED — DO NOT DELETE THIS COMMENT */
+@import 'tailwindcss';
+/* END TAILWIND IMPORTS — ALL OTHER CSS MUST GO BELOW THIS LINE */
+
+@theme {
+  --font-sans: 'Inter', ui-sans-serif, system-ui, sans-serif;
+  --font-mono: 'Geist Mono', ui-monospace, SFMono-Regular, Menlo, monospace;
+
+  --color-navy: #173c4f;
+  --color-navy-deep: #102c3a;
+  --color-navy-soft: #24506a;
+  --color-teal: #477c78;
+  --color-teal-ink: #3a6763;
+  --color-mint: #b8e0ce;
+  --color-mint-50: #eaf6f0;
+  --color-canvas: #f6f8fa;
+  --color-surface: #ffffff;
+  --color-ink: #192b35;
+  --color-muted: #55656f;
+  --color-faint: #6b7a83;
+  --color-line: #e3e8ec;
+  --color-line-strong: #ccd4da;
+
+  --color-success: #16846b;
+  --color-success-50: #e6f3ef;
+  --color-warning: #c58b27;
+  --color-warning-ink: #8a5f14;
+  --color-warning-50: #fbf3e3;
+  --color-critical: #d94b4b;
+  --color-critical-ink: #b23535;
+  --color-critical-50: #fcecec;
+  --color-neutral: #7b8890;
+  --color-neutral-50: #eef1f3;
+
+  --ease-out-strong: cubic-bezier(0.23, 1, 0.32, 1);
+}
+
+html, body, #root { height: 100%; }
+body {
+  font-family: var(--font-sans);
+  color: var(--color-ink);
+  background: var(--color-canvas);
+  font-size: 14px;
+  -webkit-font-smoothing: antialiased;
+  font-feature-settings: 'cv11', 'ss01';
+}
+
+.hatch {
+  background-image: repeating-linear-gradient(
+    135deg,
+    var(--color-neutral-50) 0 4px,
+    #dde3e7 4px 8px
+  );
+}
+
+.tnum { font-variant-numeric: tabular-nums; }
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: 0.01ms !important;
+    transition-duration: 0.01ms !important;
+  }
+}

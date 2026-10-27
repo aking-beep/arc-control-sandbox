@@ -6,7 +6,8 @@ Meridian is a fictional company with six operational departments, a real in-proc
 
 ## Current verification level
 
-- Verified here: syntax checks and three local backend tests, including refusal of unauthenticated direct writes.
+- Verified here: local backend unit tests (`npm test`), including refusal of unauthenticated direct writes, fault-endpoint isolation, the UI's server routes, and a check that browser source carries no credentials.
+- Latest run against ARC Control `162d00d` (26 Oct 2026, `docs/VALIDATION_LAB.md`): 17/17 integration; Phase 2 30 pass, **3 fail**, 5 unsupported, 1 not implemented; stress 9/9. The earlier `aa2f37c` run (2 fail) is in `docs/PHASE_2_READINESS.md`.
 - **Not verified here:** actual end-to-end integration against a built checkout of ARC Control; ARC packages are not in this archive. The integration adapter is based on source inspected from the GitHub repository and needs a real integration run.
 - Never interpret a UI badge as proof without the observed effects and evidence. The scenarios assert these whenever ARC has made a decision.
 
@@ -42,7 +43,7 @@ ARC_REPO_PATH=/absolute/path/to/arc-control npm start
 
 When started successfully:
 
-- `http://127.0.0.1:8890` — Meridian company command center
+- `http://127.0.0.1:8890` — Meridian Validation Lab (the React UI in `ui/`, once built with `npm run ui:build`; until then the original page). The original single-file page stays at `/classic`.
 - `http://127.0.0.1:8787` — real ARC Control API, started by sandbox bootstrap
 - `http://127.0.0.1:8788` — real ARC Control console, started by sandbox bootstrap
 
@@ -96,10 +97,25 @@ ARC Assurance is invoked through the shipped `POST /v1/assurance/runs` and `GET 
 ## Commands
 
 ```bash
-npm test         # unit tests for Meridian backend and connector boundary
-npm start        # local integrated three-server environment
-npm run smoke    # live 17-scenario suite; requires running environment
+npm test             # unit tests: Meridian backend, connector boundary, UI server routes
+npm start            # local integrated three-server environment
+npm run smoke        # live 17-scenario suite; requires running environment
+npm run validate     # same 17 scenarios, writes reports/latest.json
+npm run phase2       # phase 2 security, stress, and evidence report; requires npm start
+
+npm run ui:install   # install the Validation Lab UI dependencies (ui/ only)
+npm run ui:typecheck # tsc --noEmit over ui/src
+npm run ui:build     # type check + production build into ui/dist, served by npm start on :8890
+npm run ui:dev       # Vite dev server on http://127.0.0.1:5173, proxying /api to :8890
 ```
+
+`npm run phase2` exits non-zero while any Phase 2 check fails. Against ARC `162d00d` three do (`concurrent-idempotency`, `policy-change-before-release`, `retired-agent-final`); that exit code is the result, not a broken runner.
+
+## Meridian Validation Lab UI
+
+`ui/` is the Magic Patterns redesign, integrated as a separate package so the backend keeps zero runtime dependencies. It talks only to same-origin `/api/*` on the Meridian server; it never calls ARC directly and never holds the operator token, agent keys or the connector token. Every figure on screen carries its source: LIVE (this server), RECORDED (`reports/*.json`), BASELINE (`docs/PHASE_2_READINESS.md`), REPO (source code) or ILLUSTRATIVE. Unsupported and not-implemented checks are never counted as passes; the security findings stay listed until the ARC fix is independently retested, and any failing Phase 2 check without a finding is listed too. Details, the endpoint map and known gaps: [`docs/VALIDATION_LAB.md`](docs/VALIDATION_LAB.md).
+
+Phase 2 is a separate catalogue. It does not replace the 17 integration scenarios. `reports/phase2-latest.json` records passes, failures, unsupported product gaps, and not-implemented checks. A green sandbox run is not an enterprise certification.
 
 ## What the starter does NOT include yet
 
@@ -112,7 +128,7 @@ npm run smoke    # live 17-scenario suite; requires running environment
 - External scanner-based security audit or penetration testing
 - Persisted Meridian database: intentionally resettable in-memory fixtures for first integration stage
 
-See `docs/MASTER_BUILD_PLAN.md`, `docs/MAGIC_PATTERNS_PROMPT.md`, and `docs/CLAUDE_CODE_PROMPT.md` for the complete expansion plan and tooling workflow.
+See `docs/MASTER_BUILD_PLAN.md`, `docs/MAGIC_PATTERNS_PROMPT.md`, `docs/CLAUDE_CODE_PROMPT.md` and `docs/VALIDATION_LAB.md` for the expansion plan, tooling workflow and UI integration.
 
 ## Safety
 

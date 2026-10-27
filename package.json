@@ -3,7 +3,7 @@
   "version": "0.1.0",
   "private": true,
   "type": "module",
-  "description": "Meridian Commerce \u2014 a synthetic enterprise integration test harness for ARC Control 2.0",
+  "description": "Meridian Commerce — a synthetic enterprise integration test harness for ARC Control 2.0",
   "engines": {
     "node": ">=22"
   },
@@ -12,6 +12,11 @@
     "test": "node --test tests/*.test.mjs",
     "smoke": "node src/smoke.mjs",
     "preflight": "node src/preflight.mjs",
-    "validate": "node src/report.mjs"
+    "validate": "node src/report.mjs",
+    "phase2": "node src/phase2-report.mjs",
+    "ui:install": "npm --prefix ui ci",
+    "ui:dev": "npm --prefix ui run dev",
+    "ui:typecheck": "npm --prefix ui run typecheck",
+    "ui:build": "npm --prefix ui run build"
   }
 }
