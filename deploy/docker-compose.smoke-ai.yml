@@ -1,0 +1,12 @@
+# Used by smoke.sh: AI mode against tools/stand-in-model.mjs, run inside the
+# lab container. No API key, no outbound route; the stand-in is not a model
+# (see docs/LIVE_OPERATIONS.md). Proves the image ships the SDK and that AI
+# mode works through the real gateway in the container.
+services:
+  lab:
+    environment:
+      ANTHROPIC_API_KEY: smoke-stand-in-key
+      ANTHROPIC_BASE_URL: http://127.0.0.1:9911
+      LIVE_MODE: ai
+      LIVE_AI_EVERY: "3"
+    command: ["sh", "-c", "node tools/stand-in-model.mjs 9911 & exec node src/start.mjs"]

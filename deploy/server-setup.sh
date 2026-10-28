@@ -17,11 +17,17 @@
 # Live operations (agents working through a scripted, seeded day) start with
 # the stack; --no-live leaves them paused, --live-rate sets actions per minute.
 #
+# AI-driven agents: --anthropic-key-file FILE stores an Anthropic API key in
+# deploy/.env (mode 600) and starts the day in AI mode. The key is kept on later
+# runs; --scripted keeps it but starts scripted, --no-ai removes it.
+# --ai-model sets the model (default claude-opus-5-5).
+#
 # --no-tls serves plain HTTP on 127.0.0.1:8080/8081 instead (for trying the
 # script on a machine with no public name). --skip-install skips step 1.
 set -euo pipefail
 
 domain='' console='' arc_ref='main' new_password=0 tls=1 install=1 user='' live=1 live_rate=20
+key_file='' no_ai=0 live_mode='' ai_model=''
 while [ $# -gt 0 ]; do
   case "$1" in
     --domain) domain="$2"; shift 2 ;;
@@ -33,6 +39,10 @@ while [ $# -gt 0 ]; do
     --skip-install) install=0; shift ;;
     --no-live) live=0; shift ;;
     --live-rate) live_rate="$2"; shift 2 ;;
+    --anthropic-key-file) key_file="$2"; shift 2 ;;
+    --no-ai) no_ai=1; shift ;;
+    --scripted) live_mode=scripted; shift ;;
+    --ai-model) ai_model="$2"; shift 2 ;;
     *) echo "unknown option: $1" >&2; exit 2 ;;
   esac
 done
@@ -107,6 +117,23 @@ else
   echo "New login: user $user, password $password"
   echo "Save it now. It is not stored anywhere in plain text."
 fi
+# The Anthropic key, if any: from --anthropic-key-file, else kept from the last run.
+ai_key=''
+if [ "$no_ai" = 0 ]; then
+  if [ -n "$key_file" ]; then
+    ai_key="$(tr -d ' \r\n' < "$key_file")"
+    [ -n "$ai_key" ] || { echo "$key_file is empty" >&2; exit 2; }
+  elif [ -f "$env_file" ]; then
+    ai_key="$(grep '^ANTHROPIC_API_KEY=' "$env_file" | cut -d= -f2- || true)"
+  fi
+fi
+[ -n "$ai_model" ] || ai_model="$( [ -f "$env_file" ] && grep '^LIVE_AI_MODEL=' "$env_file" | cut -d= -f2- || true)"
+ai_lines=''
+if [ -n "$ai_key" ]; then
+  ai_lines="ANTHROPIC_API_KEY=$ai_key
+LIVE_MODE=${live_mode:-ai}
+LIVE_AI_MODEL=${ai_model:-claude-opus-5-5}"
+fi
 if [ "$tls" = 1 ]; then
   sites="LAB_DOMAIN=$domain
 CONSOLE_DOMAIN=$console
@@ -116,7 +143,7 @@ else
 fi
 umask 077
 cat > "$env_file" <<EOF
-# Written by deploy/server-setup.sh. Holds the login hash: keep it private.
+# Written by deploy/server-setup.sh. Holds the login hash and any API key: keep it private.
 ARC_REF=$sha
 SANDBOX_REF=$(git rev-parse HEAD 2>/dev/null || echo unknown)
 LAB_USER=$user
@@ -124,12 +151,15 @@ $hash_line
 LAB_BIND=127.0.0.1
 LIVE_OPS=$live
 LIVE_RATE=$live_rate
+$ai_lines
 $sites
 EOF
 chmod 600 "$env_file"
 
 say "Build and start (a few minutes the first time)"
 compose=(docker compose -f deploy/docker-compose.yml --env-file "$env_file")
+# AI mode needs outbound HTTPS to the Claude API; the override adds it only when a key is set.
+if [ -n "$ai_key" ]; then compose=(docker compose -f deploy/docker-compose.yml -f deploy/docker-compose.ai.yml --env-file "$env_file"); fi
 # SKIP_BUILD=1 uses an image already built (for example with --secret id=extra_ca).
 if [ "${SKIP_BUILD:-}" = 1 ]; then "${compose[@]}" up -d; else "${compose[@]}" up -d --build; fi
 
@@ -152,4 +182,5 @@ if [ -n "$password" ]; then
   echo "(Shown once. It is stored only as a hash; run again with --new-password to replace it.)"
 fi
 echo "ARC Control:  ${sha:0:7}"
+if [ -n "$ai_key" ]; then echo "AI agents:    ${ai_model:-claude-opus-5-5}, starting in ${live_mode:-ai} mode"; else echo "AI agents:    off (add --anthropic-key-file to enable)"; fi
 echo "Logs:         ${compose[*]} logs -f"

@@ -4,6 +4,7 @@ import { useLiveOps } from '../../api/LiveProvider'
 import { PageHeader, Section, Button, Empty } from '../../components/ui/primitives'
 import { SourceTag } from '../../components/ui/SourceTag'
 import { LiveFeed, DEPT_LABEL } from '../../components/lab/LiveFeed'
+import type { LiveMode } from '../../api/types'
 import { LiveState } from '../../components/lab/LiveState'
 import { ENDPOINTS } from '../../data/registry'
 import { fmtTime } from '../../lib/status'
@@ -11,9 +12,11 @@ import { fmtTime } from '../../lib/status'
 const RATES = [6, 20, 60, 120]
 
 export function LiveOps() {
-  const { snapshot: s, events, busy, error, start, pause, newDay, link } = useLiveOps()
+  const { snapshot: s, events, busy, error, start, pause, newDay, setMode, link } = useLiveOps()
   const [seed, setSeed] = useState<string>('')
   const [rate, setRate] = useState<number | null>(null)
+  const mode: LiveMode = s?.mode ?? 'scripted'
+  const ai = s?.ai
   const c = s?.counts
   const byDept = useMemo(() => {
     const out: Record<string, { actions: number; executed: number; held: number; stopped: number }> = {}
@@ -34,7 +37,7 @@ export function LiveOps() {
     <>
       <PageHeader
         title="Live Operations"
-        description="Meridian's and Northwind's agents working through a scripted, seeded day. Every request goes through ARC Control. Each outcome is checked against what the policies predict, and against what Meridian actually recorded."
+        description="Meridian's and Northwind's agents working through a seeded day: scripted, or with AI agents deciding what to do from an inbox. Every request goes through ARC Control. Each outcome is checked against what the policies predict, and against what Meridian actually recorded."
         meta={<><LiveState /><SourceTag source="live" note="Streamed from the running Meridian server" /></>}
         actions={<>
           <a href={ENDPOINTS.arcConsole} target="_blank" rel="noreferrer"><Button variant="ghost" icon={<ArrowUpRight className="size-3.5" />}>ARC Console</Button></a>
@@ -55,6 +58,13 @@ export function LiveOps() {
         <span>Pace <span className="tnum text-ink">{s?.rate ?? '—'}</span> actions/min</span>
         <span>Day started <span className="font-mono text-ink">{fmtTime(s?.dayStartedAt ?? undefined)}</span></span>
         <span className="ml-auto flex flex-wrap items-center gap-2">
+          <label className="flex items-center gap-1.5" title={ai?.available ? undefined : `AI mode unavailable: ${ai?.reason ?? 'not configured'}`}>Mode
+            <select value={mode} onChange={e => setMode(e.target.value as LiveMode)} disabled={!s || busy !== null}
+              className="h-7 rounded-md border border-line bg-canvas px-1.5 text-[12px] text-ink" aria-label="Scripted or AI-driven agents">
+              <option value="scripted">Scripted</option>
+              <option value="ai" disabled={!ai?.available}>AI agents{ai?.available ? '' : ' (unavailable)'}</option>
+            </select>
+          </label>
           <label className="flex items-center gap-1.5">Seed
             <input value={seed} onChange={e => setSeed(e.target.value.replace(/[^0-9]/g, ''))} placeholder={String(s?.seed ?? 1)} inputMode="numeric"
               className="h-7 w-20 rounded-md border border-line bg-canvas px-2 font-mono text-[12px] text-ink" aria-label="Seed for the next day" />
@@ -90,6 +100,23 @@ export function LiveOps() {
               ? <p className="px-4 py-3 text-[12.5px] text-muted">None. Every outcome matched policy, and Meridian recorded exactly the effects ARC's decisions imply.</p>
               : <LiveFeed events={s.anomalies} limit={20} />}
           </Section>
+          <Section title="AI agents" aside={<span className="text-[11.5px] text-faint">{mode === 'ai' ? 'on' : 'off'}</span>} pad={false}>
+            {!ai?.available ? (
+              <p className="px-4 py-3 text-[12.5px] text-muted">Unavailable: {ai?.reason ?? 'not configured'}. Set <span className="font-mono">ANTHROPIC_API_KEY</span> on the server (never in the browser) and restart.</p>
+            ) : (
+              <div className="space-y-2 px-4 py-3 text-[12.5px]">
+                {ai.reason && <p className="text-critical-ink">{ai.reason}</p>}
+                <p className="text-muted">Model <span className="font-mono text-ink">{ai.model}</span>{ai.effort ? <> · effort <span className="font-mono text-ink">{ai.effort}</span></> : null} · an inbox item every {ai.every} steps</p>
+                <p className="text-muted">Today <span className="tnum text-ink">{ai.episodes}</span> / {ai.maxEpisodes} items · <span className="tnum text-ink">{Math.round(ai.tokens / 1000)}k</span> / {Math.round(ai.maxTokens / 1000)}k tokens{c?.ai_errors ? <> · <span className="text-critical-ink">{c.ai_errors} model errors</span></> : null}</p>
+                <div className="grid grid-cols-3 gap-2 pt-1">
+                  <Kpi label="Declined bait" value={c?.bait_declined ?? 0} tone="text-success" />
+                  <Kpi label="ARC contained" value={c?.bait_contained ?? 0} tone="text-warning-ink" />
+                  <Kpi label="Took bait" value={c?.bait_executed ?? 0} tone={c?.bait_executed ? 'text-critical-ink' : 'text-ink'} sub="allowed by policy" />
+                </div>
+                <p className="text-[11px] text-faint">Agent judgment on adversarial inbox items. Taking bait that policy allows is a finding about the agent or the policy, not an ARC anomaly.</p>
+              </div>
+            )}
+          </Section>
           <Section title="Approval queue" aside={<span className="text-[11.5px] text-faint">{s?.pendingApprovals.length ?? 0} waiting · decide in the ARC console too</span>} pad={false}>
             {!s?.pendingApprovals.length ? <p className="px-4 py-3 text-[12.5px] text-muted">Nothing waiting.</p> : (
               <ul className="divide-y divide-line">{s.pendingApprovals.slice(0, 8).map(p => (
@@ -122,7 +149,7 @@ export function LiveOps() {
       </div>
 
       <p className="mt-5 text-[11.5px] leading-relaxed text-faint">
-        All companies, people and transactions are fictional. The same seed produces the same requests and approver decisions; only Northwind's wire cut-off follows the real UTC clock. Live operations pause while any test or suite runs, so test results are never mixed with live traffic. They never change ARC's policies, agents or tools.
+        All companies, people and transactions are fictional. The same seed produces the same requests and approver decisions; only Northwind's wire cut-off follows the real UTC clock. In AI mode the same seed gives the same inbox, but what the agents do with it is the model's decision. Live operations pause while any test or suite runs, so test results are never mixed with live traffic. They never change ARC's policies, agents or tools.
       </p>
     </>
   )
