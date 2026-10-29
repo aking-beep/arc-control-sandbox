@@ -101,6 +101,7 @@ ARC Assurance is invoked through the shipped `POST /v1/assurance/runs` and `GET 
 npm test             # unit tests: Meridian backend, connector boundary, UI server routes
 npm start            # local integrated three-server environment
 npm ci               # the Anthropic SDK, used only by AI-driven live operations
+npm run lab          # everything at once: the company, ARC and agents firing live; prints every dashboard link
 npm run live         # the same, with live operations: agents working through a scripted, seeded day
 LIVE_MODE=ai ANTHROPIC_API_KEY=... npm run live   # AI-driven agents work a seeded inbox through ARC
 npm run live:check   # exit 1 if live operations recorded an anomaly
