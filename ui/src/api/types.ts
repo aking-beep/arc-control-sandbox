@@ -127,7 +127,7 @@ export interface LiveEvent {
   at: string
   day: number
   tick: number
-  kind: 'action' | 'approval' | 'inbound' | 'story' | 'anomaly' | 'status' | 'error'
+  kind: 'action' | 'approval' | 'inbound' | 'story' | 'anomaly' | 'status' | 'error' | 'inbox' | 'agent'
   department?: LiveDepartment
   agent?: string
   tool?: string
@@ -153,15 +153,47 @@ export interface LiveEvent {
   ok: boolean | null
   why?: string
   status?: LiveStatus
+  /** AI mode: the inbox item an action or an agent event belongs to. */
+  itemId?: string | null
+  item?: { channel: string; from: string; subject: string; body: string; kind: 'routine' | 'adversarial'; probe: string | null }
+  /** 'agent' events: the model's reasoning summary, how the episode ended, and what it tried. */
+  reasoning?: string | null
+  ended?: 'done' | 'max_turns' | 'max_tokens' | 'model_refused' | 'interrupted' | 'error'
+  calls?: number
+  attempts?: Array<{ tool: string; parameters: Record<string, unknown>; actual: string }>
+  itemKind?: 'routine' | 'adversarial'
+  probe?: string | null
+  /** Adversarial items only: declined the bait, took it and ARC contained it, or took it and policy allowed it. */
+  judgment?: 'declined' | 'contained' | 'executed' | null
+  usage?: { input: number; output: number; cacheRead: number; cacheWrite: number } | null
+  model?: string
+}
+
+export type LiveMode = 'scripted' | 'ai'
+
+export interface LiveAi {
+  available: boolean
+  /** Why AI mode is unavailable or was switched off, if it is. */
+  reason: string | null
+  model: string
+  effort: string | null
+  every: number
+  episodes: number
+  maxEpisodes: number
+  tokens: number
+  maxTokens: number
 }
 
 export interface LiveCounts {
   actions: number; executed: number; pending_approval: number; denied: number; refused: number; unknown: number
   approved: number; rejected: number; left_pending: number; human: number; inbound: number; anomalies: number
+  inbox?: number; episodes?: number; ai_errors?: number; bait_declined?: number; bait_contained?: number; bait_executed?: number
 }
 
 export interface LiveStatus {
   running: boolean
+  mode?: LiveMode
+  ai?: LiveAi
   seed: number
   rate: number
   day: number

@@ -1,0 +1,22 @@
+# AI-driven agents (src/live/ai.mjs). Added by server-setup.sh only when an
+# Anthropic API key is configured:
+#
+#   docker compose -f deploy/docker-compose.yml -f deploy/docker-compose.ai.yml --env-file deploy/.env up -d
+#
+# The lab needs outbound HTTPS to reach the Claude API, so this attaches it to
+# a network with a route out. Without this file the lab has none. ARC's
+# connector still reaches only 127.0.0.1 (allowedHosts), and the key stays in
+# the lab container's environment: the browser and ARC never see it.
+services:
+  lab:
+    environment:
+      ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:?set ANTHROPIC_API_KEY}
+      LIVE_MODE: ${LIVE_MODE:-ai}
+      LIVE_AI_MODEL: ${LIVE_AI_MODEL:-claude-opus-5-5}
+      LIVE_AI_EVERY: ${LIVE_AI_EVERY:-4}
+      LIVE_AI_MAX_EPISODES: ${LIVE_AI_MAX_EPISODES:-120}
+      LIVE_AI_MAX_TOKENS: ${LIVE_AI_MAX_TOKENS:-1500000}
+    networks: [internal, egress]
+
+networks:
+  egress: {}

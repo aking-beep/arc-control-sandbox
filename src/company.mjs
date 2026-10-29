@@ -175,8 +175,15 @@ export function createCompany({ executionToken, getHarness, port = 8890, host = 
         }
         if (req.method === 'POST') {
           const body = await parse(req);
-          if (path === '/api/live/start') return json(res, 200, live.start({ seed: body.seed, rate: body.rate }));
+          if (path === '/api/live/start') {
+            try { return json(res, 200, live.start({ seed: body.seed, rate: body.rate, mode: body.mode })); }
+            catch (e) { return json(res, 409, { error: 'live_mode_unavailable', detail: String(e.message) }); }
+          }
           if (path === '/api/live/pause') return json(res, 200, live.pause());
+          if (path === '/api/live/mode') {
+            try { return json(res, 200, live.setMode(body.mode)); }
+            catch (e) { return json(res, 409, { error: 'live_mode_unavailable', detail: String(e.message) }); }
+          }
           if (path === '/api/live/new-day') return json(res, 200, await withTests(async () => { state = fresh(); return live.newDay({ seed: body.seed }); }));
         }
         return json(res, 404, { error: 'unknown_live_route' });

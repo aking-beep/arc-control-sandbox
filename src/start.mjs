@@ -10,6 +10,7 @@ import { northwind, NORTHWIND_SCENARIOS } from './packs/northwind.mjs';
 import { createPackRunner } from './packs/runner.mjs';
 import { buildCoverage } from './coverage.mjs';
 import { createLiveOps } from './live/engine.mjs';
+import { loadAiClient } from './live/ai.mjs';
 
 // ARC remains a sibling checkout, independently versioned. This harness uses
 // its public exported packages; no changes to arc-control source are required.
@@ -22,6 +23,7 @@ const arcImport = async p => {
 const port = Number(process.env.MERIDIAN_PORT || 8890);
 const apiPort = Number(process.env.ARC_SANDBOX_API_PORT || 8787);
 const consolePort = Number(process.env.ARC_SANDBOX_CONSOLE_PORT || 8788);
+const num = v => (v === undefined || v === '' ? undefined : Number(v));
 const host = '127.0.0.1'; // connector targets and internal calls always use loopback
 // Interface the three servers listen on. Loopback unless a container explicitly
 // opts in; the operator routes have no authentication, so anything else must sit
@@ -141,18 +143,26 @@ try {
   const product = createProduct({ company, seeded, apiBase, operatorToken, webhookSigningSecret, hookUrl: `http://${host}:${port}/hooks/arc` });
   const suites = { [product.id]: product };
   suites[northwind.id] = createPackRunner({ pack: northwind, catalogue: NORTHWIND_SCENARIOS, company, seeded, apiBase, operatorToken });
-  const live = createLiveOps({ company, seeded, apiBase, operatorToken, northwindPack: northwind });
+  // AI-driven agents need ANTHROPIC_API_KEY on this server; it never leaves it.
+  const ai = await loadAiClient(process.env);
+  const live = createLiveOps({
+    company, seeded, apiBase, operatorToken, northwindPack: northwind, ai,
+    aiOptions: { every: num(process.env.LIVE_AI_EVERY), maxEpisodes: num(process.env.LIVE_AI_MAX_EPISODES), maxTokens: num(process.env.LIVE_AI_MAX_TOKENS), effort: process.env.LIVE_AI_EFFORT }
+  });
   harness = { arc, consoleApp, seeded, scenarios, phase2, suites, live, coverage: results => buildCoverage(arcRoot, results) };
   // Live operations start paused unless asked for: `npm run live`, or LIVE_OPS=1 on a server.
   const liveOn = process.argv.includes('--live') || process.env.LIVE_OPS === '1';
-  if (liveOn) live.start({ seed: process.env.LIVE_SEED, rate: process.env.LIVE_RATE });
+  const liveMode = process.env.LIVE_MODE === 'ai' && ai.client ? 'ai' : 'scripted';
+  if (process.env.LIVE_MODE === 'ai' && !ai.client) console.warn(`LIVE_MODE=ai ignored: ${ai.reason}. Running scripted.`);
+  if (liveOn) live.start({ seed: process.env.LIVE_SEED, rate: process.env.LIVE_RATE, mode: liveMode });
   console.log(`\nMERIDIAN COMMERCE SYNTHETIC ENTERPRISE`);
   console.log(`  Validation Lab:   http://${host}:${port}`);
   console.log(`  Industry packs:   ${packs.map(pack => pack.name).join(', ')}`);
   console.log(`  ARC Control API:  http://${host}:${apiPort}`);
   console.log(`  ARC Console:      http://${host}:${consolePort}`);
   console.log(`  Integration:      generic HTTP connector -> protected Meridian business endpoints`);
-  console.log(`  Live operations:  ${liveOn ? `running (seed ${live.snapshot().seed}, ${live.snapshot().rate} actions/min)` : 'paused · start from Live Operations or run npm run live'}`);
+  console.log(`  Live operations:  ${liveOn ? `running ${liveMode} (seed ${live.snapshot().seed}, ${live.snapshot().rate} actions/min)` : 'paused · start from Live Operations or run npm run live'}`);
+  console.log(`  AI agents:        ${ai.client ? `available (${ai.model})` : `off · ${ai.reason}`}`);
   console.log(`  Safety:           local-loopback-only, synthetic data and effects\n`);
   process.on('SIGINT', async () => { live.stop(); await consoleApp.close(); await arc.close(); await company.close(); process.exit(0); });
 } catch (e) {

@@ -56,7 +56,9 @@ jobs:
 
       - name: Sandbox unit and contract tests
         working-directory: arc-control-sandbox
-        run: npm test
+        run: |
+          npm ci
+          npm test
 
       - name: Validation Lab type check and build
         working-directory: arc-control-sandbox
@@ -70,12 +72,19 @@ jobs:
 
       # Live operations run throughout, so every harness run also proves that
       # test runs pause live traffic and still pass exactly as on a quiet stack.
+      # AI mode runs against tools/stand-in-model.mjs: real SDK, real gateway,
+      # a scripted stand-in instead of a model (CI holds no API key).
       - name: Start the integrated stack with live operations
         working-directory: arc-control-sandbox
         env:
           LIVE_RATE: '120'
+          LIVE_MODE: ai
+          LIVE_AI_EVERY: '3'
+          ANTHROPIC_API_KEY: stand-in
+          ANTHROPIC_BASE_URL: http://127.0.0.1:9911
         run: |
           npm run preflight
+          nohup node tools/stand-in-model.mjs 9911 > model.log 2>&1 &
           nohup npm run live > stack.log 2>&1 &
           for i in $(seq 1 30); do
             if curl -fs http://127.0.0.1:8890/api/health | grep -q '"gatewayConfigured":true'; then exit 0; fi
@@ -88,7 +97,7 @@ jobs:
         working-directory: arc-control-sandbox
         run: |
           sleep 30
-          npm run live:check -- --min 30
+          npm run live:check -- --min 30 --min-episodes 5
 
       - name: Whole-product run
         working-directory: arc-control-sandbox
@@ -96,7 +105,7 @@ jobs:
 
       - name: Live operations recorded no anomaly
         working-directory: arc-control-sandbox
-        run: npm run live:check -- --min 40
+        run: npm run live:check -- --min 40 --min-episodes 8
 
       - name: Job summary
         if: always()

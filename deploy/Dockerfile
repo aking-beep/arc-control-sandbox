@@ -22,6 +22,7 @@ COPY --chown=node:node . /opt/arc-control-sandbox
 WORKDIR /opt/arc-control-sandbox
 RUN --mount=type=secret,id=extra_ca,required=false \
     if [ -s /run/secrets/extra_ca ]; then export NODE_EXTRA_CA_CERTS=/run/secrets/extra_ca; fi \
+ && npm ci --omit=dev --ignore-scripts \
  && npm --prefix ui ci && npm --prefix ui run build && chown -R node:node /opt/arc-control-sandbox
 
 # Reports name what was tested; the image has no .git to read it from.

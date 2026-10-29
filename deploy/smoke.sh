@@ -11,6 +11,8 @@ set -euo pipefail
 cd "$(dirname "$0")/.."
 
 compose=(docker compose -f deploy/docker-compose.yml)
+# AI mode runs too, against a stand-in for the Claude API inside the container. SMOKE_AI=0 skips it.
+[ "${SMOKE_AI:-1}" = 0 ] || compose+=(-f deploy/docker-compose.smoke-ai.yml)
 export LAB_USER=smoke
 # A fresh password per run unless one is given; KEEP=1 prints it at the end.
 password="${SMOKE_PASSWORD:-smoke-$(od -An -N12 -tx1 /dev/urandom | tr -d ' \n')}"
@@ -61,13 +63,16 @@ check "lab not published directly"    000 "$(code http://127.0.0.1:8890/api/heal
 stream="$(curl -sN --max-time 4 "${auth[@]}" http://127.0.0.1:8080/api/live/stream || true)"
 check "live stream reaches the browser through the gate" yes "$(grep -q '^event: snapshot' <<<"$stream" && echo yes || echo no)"
 check "live stream refuses no login"  401 "$(code http://127.0.0.1:8080/api/live/stream)"
+leak="$(curl -s --max-time 5 "${auth[@]}" http://127.0.0.1:8080/api/live; curl -s --max-time 5 "${auth[@]}" http://127.0.0.1:8080/api/state; curl -s --max-time 5 "${auth[@]}" http://127.0.0.1:8080/)"
+check "model API key not served to the browser" no "$(grep -q smoke-stand-in-key <<<"$leak" && echo yes || echo no)"
 
 sleep 20
-if docker exec "$lab" node src/live-check.mjs --min 20; then echo "ok    live operations running, no anomaly"; else echo "FAIL  live operations"; failures=$((failures + 1)); fi
+episodes=''; [ "${SMOKE_AI:-1}" = 0 ] || episodes='--min-episodes 3'
+if docker exec "$lab" node src/live-check.mjs --min 20 $episodes; then echo "ok    live operations running, no anomaly"; else echo "FAIL  live operations"; failures=$((failures + 1)); fi
 
 echo "== npm run product -- --quick inside the lab container"
 if docker exec "$lab" npm run product -- --quick; then echo "ok    product harness"; else echo "FAIL  product harness"; failures=$((failures + 1)); fi
-if docker exec "$lab" node src/live-check.mjs --min 20; then echo "ok    live operations still clean after the harness"; else echo "FAIL  live operations after the harness"; failures=$((failures + 1)); fi
+if docker exec "$lab" node src/live-check.mjs --min 20 $episodes; then echo "ok    live operations still clean after the harness"; else echo "FAIL  live operations after the harness"; failures=$((failures + 1)); fi
 mkdir -p reports && docker cp "$lab:/opt/arc-control-sandbox/reports/product-latest.json" reports/product-docker.json 2>/dev/null || true
 
 echo "== $failures failure(s)"

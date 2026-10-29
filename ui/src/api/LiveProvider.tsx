@@ -1,7 +1,7 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import { ApiError, meridianApi } from './client'
 import { useData } from './DataProvider'
-import type { LiveEvent, LiveSnapshot } from './types'
+import type { LiveEvent, LiveMode, LiveSnapshot } from './types'
 
 /**
  * Live operations in the browser.
@@ -17,10 +17,11 @@ interface LiveValue {
   /** Oldest first, at most KEEP. */
   events: LiveEvent[]
   link: 'connecting' | 'stream' | 'polling' | 'offline'
-  busy: 'start' | 'pause' | 'new-day' | null
+  busy: 'start' | 'pause' | 'mode' | 'new-day' | null
   error: string | null
-  start: (opts?: { seed?: number; rate?: number }) => Promise<void>
+  start: (opts?: { seed?: number; rate?: number; mode?: LiveMode }) => Promise<void>
   pause: () => Promise<void>
+  setMode: (mode: LiveMode) => Promise<void>
   newDay: (seed?: number) => Promise<void>
 }
 
@@ -81,7 +82,7 @@ export function LiveProvider({ children }: { children: ReactNode }) {
         if (e.kind === 'status') { setEvents(prev => prev.filter(x => x.day === e.day)); return }
         // A new day (from any browser, or the 24-hour rollover) starts the feed afresh.
         setEvents(prev => [...prev.filter(x => x.day === e.day), e].slice(-KEEP))
-        if (e.kind === 'action' || e.kind === 'approval' || e.kind === 'inbound' || e.kind === 'anomaly') nudge()
+        if (e.kind === 'action' || e.kind === 'approval' || e.kind === 'inbound' || e.kind === 'anomaly' || e.kind === 'agent') nudge()
       }
       source.onerror = () => setLink('polling')
     }
@@ -107,6 +108,7 @@ export function LiveProvider({ children }: { children: ReactNode }) {
     snapshot, events, link, busy, error,
     start: opts => run('start', () => meridianApi.liveStart(opts)),
     pause: () => run('pause', () => meridianApi.livePause()),
+    setMode: mode => run('mode', () => meridianApi.liveMode(mode)),
     newDay: seed => run('new-day', () => meridianApi.liveNewDay(seed)),
   }), [snapshot, events, link, busy, error, run])
 
